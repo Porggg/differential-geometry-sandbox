@@ -183,8 +183,14 @@ export function linCombTex(cs: number[], basis: string[], d = 4): string {
 }
 export { nameTex, tex };
 
+/** Points and tangent vectors are bold in the book: p, v. */
+export function boldName(obj: ObjData): string {
+  return obj.style?.caption || `\\boldsymbol{${nameTex(obj.name)}}`;
+}
+
+/** Displayed name: the caption when one is set (e.g. a 2D copy "p2" shown as p), else the name. */
 export function nameOf(obj: ObjData): string {
-  return nameTex(obj.name);
+  return obj.style?.caption || nameTex(obj.name);
 }
 
 /** Matrix params are stored as "a, b, c; d, e, f; g, h, i". */

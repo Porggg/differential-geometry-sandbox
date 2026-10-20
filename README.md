@@ -4,11 +4,13 @@ An interactive, GeoGebra-style sandbox for the objects of **B. O'Neill, _Element
 points and tangent vectors, vector fields, curves, the Frenet apparatus, 1-forms and differential forms, mappings,
 frames and frame fields, connection forms, isometries and congruence of curves.
 
-- **Contents** — every numbered item of Chapters 1–3 (definitions, theorems, lemmas, corollaries, examples, remarks) with its page.
-  Clicking an entry loads its figure and shows the statement, the proof (same structure as the book), an explanation and live numerical checks.
+- **Course view** — the book: a table of contents of every numbered item of Chapters 1–3 (definitions, theorems, lemmas,
+  corollaries, examples, remarks) with its page, section pages, and entry pages with the statement, the proof (same structure
+  as the book), an explanation and live numerical checks. Clicking an entry loads its figure (3D and, when meaningful, 2D).
+  It also shows the full details of the selected object, including objects that cannot be drawn. ⤢ enlarges it for reading.
 - **Toolbar** — creates objects in the active graphics view (2D or 3D).
-- **Algebra view** — the construction: definitions, values, sliders (▶ animates), inline editing.
-- **Course view** — full details of the selected object (formulas, values, links to the book), including objects that cannot be drawn.
+- **Algebra view** — the construction, grouped by view: definitions, values, sliders (drag, type a value, ▶ animates), inline editing.
+- **Move tool** — drag free points, and drag α(t₀), velocities or Frenet frames along their curve.
 - **Command bar** — e.g. `alpha(t) = (cos(t), sin(t), t)`, `V = x*y*U1 - z*U3`, `phi = x^2 dx - y dz`, `Frenet(alpha, 1)`.
 
 Live site: <https://porggg.github.io/differential-geometry-sandbox/>

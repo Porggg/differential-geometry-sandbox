@@ -13,6 +13,9 @@ export interface ViewHost {
   isDraggable(name: string): boolean;
   dragPoint(name: string, coords: number[]): void;
   endDrag(): void;
+  /** Name of the curve along which this object can be dragged (via its parameter t0), or null. */
+  curveHandle(name: string): string | null;
+  dragCurveParam(name: string, t: number): void;
   /** The view became the active graphics view. */
   activate(dim: 2 | 3): void;
 }

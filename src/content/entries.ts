@@ -82,18 +82,24 @@ export const ENTRIES: Partial<Entry>[] = [
       'With the book\'s numbers, $\\mathbf{p} = (1, 1, 3)$ and $\\mathbf{v} = (2, 3, 2)$, the arrow goes from $(1, 1, 3)$ to $(3, 4, 5)$ (Fig. 1.1).\n\n' +
       'Two tangent vectors are **equal**, $\\mathbf{v}_\\mathbf{p} = \\mathbf{w}_\\mathbf{q}$, exactly when $\\mathbf{v} = \\mathbf{w}$ **and** $\\mathbf{p} = \\mathbf{q}$. ' +
       'Tangent vectors with the same vector part but different points of application are called **parallel** (§1.2): in the scene, $\\mathbf{w}_\\mathbf{q}$ is parallel to $\\mathbf{v}_\\mathbf{p}$ but is a different tangent vector.\n\n' +
-      '(The word "tangent" only acquires its geometric meaning in Chapter 4, for surfaces.)',
+      '(The word "tangent" only acquires its geometric meaning in Chapter 4, for surfaces.)\n\n' +
+      'The book works in $\\mathbf{R}^3$; the definition makes sense in any $\\mathbf{R}^n$, so the 2D view shows the same situation in $\\mathbf{R}^2$.',
     tryThis: [
-      'With the **Move** tool, drag the point $\\mathbf{p}$: the arrow $\\mathbf{v}_\\mathbf{p}$ follows, its vector part does not change.',
+      'With the **Move** tool, drag the point $\\mathbf{p}$ (in the 3D or the 2D view): the arrow $\\mathbf{v}_\\mathbf{p}$ follows, its vector part does not change.',
       'In the Algebra view, edit the vector part of $\\mathbf{v}$ — the end point $\\mathbf{p} + \\mathbf{v}$ moves accordingly.',
     ],
     scene: {
-      views: ['3d'],
+      views: ['3d', '2d'],
       build: (b) => {
         b.add('point', 'p', { coords: '(1, 1, 3)' });
-        b.add('tangentVector', 'v', { v: '(2, 3, 2)', p: 'p' });
+        b.add('tangentVector', 'v', { v: '(2, 3, 2)', p: 'p' }, { caption: '\\mathbf{v}_\\mathbf{p}' });
         b.add('point', 'q', { coords: '(-1, -2, 0)' }, { color: '#57606a' });
-        b.add('tangentVector', 'w', { v: '(2, 3, 2)', p: 'q' }, { color: '#8250df' });
+        b.add('tangentVector', 'w', { v: '(2, 3, 2)', p: 'q' }, { color: '#8250df', caption: '\\mathbf{w}_\\mathbf{q}' });
+        // the same in R² (2D view)
+        b.add('point', 'p2', { coords: '(1, 1)' }, { caption: '\\mathbf{p}' });
+        b.add('tangentVector', 'v2', { v: '(2, 1.5)', p: 'p2' }, { caption: '\\mathbf{v}_\\mathbf{p}' });
+        b.add('point', 'q2', { coords: '(-2, -1)' }, { color: '#57606a', caption: '\\mathbf{q}' });
+        b.add('tangentVector', 'w2', { v: '(2, 1.5)', p: 'q2' }, { color: '#8250df', caption: '\\mathbf{w}_\\mathbf{q}' });
       },
       select: 'v',
     },
@@ -112,14 +118,15 @@ export const ENTRIES: Partial<Entry>[] = [
     notes:
       'When the coordinate functions are simple, a few computed points already give a reasonable picture of the curve — here the sandbox samples hundreds of them. ' +
       'These curves come back in Chapter 2 to test the results on curvature and torsion: the helix in [[2.3.3]], the 3-curve in [[2.4.4]], and (4) is a cylindrical helix ([[2.4.5]]).\n\n' +
-      'The surfaces of (3) and (4) are drawn as level surfaces ([[1.1.3]]): the cylinder $(x-1)^2 + y^2 = 1$, the sphere $x^2 + y^2 + z^2 = 4$ and the hyperbolic cylinder $xy = 1$. They are hidden at first — click their colored dots in the Algebra view to show them.',
+      'The surfaces of (3) and (4) are drawn as level surfaces ([[1.1.3]]): the cylinder $(x-1)^2 + y^2 = 1$, the sphere $x^2 + y^2 + z^2 = 4$ and the hyperbolic cylinder $xy = 1$. They are hidden at first — click their colored dots in the Algebra view to show them.\n\n' +
+      'The **2D view** shows the plane curves the book refers to: the circle $(a\\cos t, a\\sin t)$ of the $xy$ plane that the helix (2) rises above, the circle of center $(1, 0)$ and radius $1$ over which the cylinder of (3) stands, and the hyperbola $xy = 1$ above which (4) lies — with the plane curve $(e^t, e^{-t})$ running along it.',
     tryThis: [
       'Change the sliders $a$ and $b$ of the helix; with $b = 0$ it collapses to a circle.',
-      'Show the cylinder `cyl` and the sphere `sph`: the curve $\\gamma$ of (3) lies on both.',
+      'Show the cylinder `cyl` and the sphere `sph`: the curve $\\alpha_{(3)}$ lies on both.',
       'Select a curve and read its velocity, acceleration, speed and length in the Course view.',
     ],
     scene: {
-      views: ['3d'],
+      views: ['3d', '2d'],
       build: (b) => {
         b.slider('a', 1.5, 0.2, 3, 0.01);
         b.slider('b', 0.3, -1, 1, 0.01);
@@ -131,6 +138,11 @@ export const ENTRIES: Partial<Entry>[] = [
         b.add('function', 'cyl', { expr: '(x - 1)^2 + y^2', levels: '1', box: 2.2, res: 40, dim: 3 }, { visible: false, color: '#cf222e', label: false });
         b.add('function', 'sph', { expr: 'x^2 + y^2 + z^2', levels: '4', box: 2.2, res: 40, dim: 3 }, { visible: false, color: '#bf8700', label: false });
         b.add('function', 'hyp', { expr: 'x*y', levels: '1', box: 3.5, res: 40, dim: 3 }, { visible: false, color: '#1a7f37', label: false });
+        // plane curves mentioned in the example (2D view)
+        b.add('curve', 'circ', { comps: '(a*cos(t), a*sin(t))', param: 't', a: '0', b: '2*pi', dim: 2 }, { color: '#0969da', caption: '(a\\cos t, a\\sin t)' });
+        b.add('curve', 'circ1', { comps: '(1 + cos(t), sin(t))', param: 't', a: '0', b: '2*pi', dim: 2 }, { color: '#cf222e', caption: '(1+\\cos t, \\sin t)' });
+        b.add('function', 'xy', { expr: 'x*y', levels: '1', box: 3.5, res: 120, dim: 2 }, { color: '#8c959f', caption: 'xy' });
+        b.add('curve', 'hyp2', { comps: '(exp(t), exp(-t))', param: 't', a: '-1.3', b: '1.3', dim: 2 }, { color: '#1a7f37', caption: '(e^t, e^{-t})' });
       },
     },
   },
@@ -186,7 +198,7 @@ export const ENTRIES: Partial<Entry>[] = [
     id: '2.3.2',
     statement:
       'If $\\beta\\colon I \\to \\mathbf{R}^3$ is a unit-speed curve with curvature $\\kappa > 0$ and torsion $\\tau$, then\n\n' +
-      '$$\\begin{aligned} T\' &= \\kappa N, \\\\ N\' &= -\\kappa T \\qquad\\ \\ + \\tau B, \\\\ B\' &= \\qquad -\\tau N. \\end{aligned}$$',
+      '$$\\begin{alignedat}{3} T\' &={} & & \\kappa N, & & \\\\ N\' &={} & -\\kappa T & & & + \\tau B, \\\\ B\' &={} & & -\\tau N. & & \\end{alignedat}$$',
     proof:
       'The first and third formulas are, in essence, the definitions of curvature ($T\' = \\kappa N$) and of torsion ($B\' = -\\tau N$) given just before the theorem. ' +
       'For the second, write $N\'$ in terms of $T, N, B$ by orthonormal expansion ([[2.1.5]]):\n\n' +

@@ -41,4 +41,6 @@ export const ICONS: Record<string, string> = {
   help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 015 .5c0 2-2.5 2-2.5 4"/><circle cx="12" cy="17" r=".8" fill="currentColor"/>'),
   book: svg('<path d="M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3z"/><path d="M5 17a3 3 0 013-3h11"/>'),
   load: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+  expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
+  shrink: svg('<path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7"/>'),
 };

@@ -3,7 +3,7 @@
 import { register } from '../core/registry';
 import type { ObjectType, Value } from '../core/types';
 import { fmt } from '../math/vec';
-import { COLORS, P, arr, linCombTex, nameOf, numVec, pointOf, str, texNum, texParts, texPointParam, texVec, texVecAt, exprTex } from './common';
+import { COLORS, P, arr, boldName, linCombTex, nameOf, numVec, pointOf, str, texNum, texParts, texPointParam, texVec, texVecAt, exprTex } from './common';
 
 const slider: ObjectType = {
   type: 'slider',
@@ -47,8 +47,8 @@ const point: ObjectType = {
     const parts = arr(p.coords);
     return { kind: 'point', p: numVec(p.coords, ctx, parts.length === 2 ? 2 : 3, 'point') };
   },
-  caption: (o) => nameOf(o),
-  algebra: (o, v) => `${nameOf(o)} = ${v && v.kind === 'point' ? texVec(v.p) : texParts(arr(o.params.coords))}`,
+  caption: (o) => boldName(o),
+  algebra: (o, v) => `${boldName(o)} = ${v && v.kind === 'point' ? texVec(v.p) : texParts(arr(o.params.coords))}`,
   course: (o, v) => {
     if (v.kind !== 'point') return '';
     const n = nameOf(o);
@@ -82,11 +82,11 @@ const tangentVector: ObjectType = {
     const dim = v.length;
     return { kind: 'vector', v: numVec(p.v, ctx, dim, 'vector part'), p: pointOf(ctx, p.p, dim) };
   },
-  caption: (o) => nameOf(o),
+  caption: (o) => boldName(o),
   algebra: (o, v, cx) =>
     v && v.kind === 'vector'
-      ? `${nameOf(o)} = ${texVecAt(v.v, v.p)}`
-      : `${nameOf(o)} = ${texParts(arr(o.params.v))}_{${texPointParam(o.params.p, cx)}}`,
+      ? `${boldName(o)} = ${texVecAt(v.v, v.p)}`
+      : `${boldName(o)} = ${texParts(arr(o.params.v))}_{${texPointParam(o.params.p, cx)}}`,
   course: (o, v) => {
     if (v.kind !== 'vector') return '';
     const end = v.p.map((x, i) => x + v.v[i]);

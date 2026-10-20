@@ -13,23 +13,21 @@ import type { ViewHost } from './render/host';
 import { View2D } from './render/view2d';
 import { View3D } from './render/view3d';
 import { AlgebraPanel } from './ui/algebra';
-import { CoursePanel } from './ui/course';
+import { CoursePanel, type CoursePage } from './ui/course';
 import { buildForm } from './ui/form';
 import { ICONS } from './ui/icons';
 import { escapeHtml, texToHtml } from './ui/katex';
-import { TocPanel } from './ui/toc';
 import { Toolbar } from './ui/toolbar';
 
-type PanelId = 'toc' | 'algebra' | 'v2d' | 'v3d' | 'course' | 'cmd';
+type PanelId = 'algebra' | 'v2d' | 'v3d' | 'course' | 'cmd';
 
 interface Layout {
-  toc: boolean;
   algebra: boolean;
   v2d: boolean;
   v3d: boolean;
   course: boolean;
   cmd: boolean;
-  wToc: number;
+  courseMax: boolean;
   wAlgebra: number;
   wCourse: number;
 }
@@ -73,7 +71,6 @@ export class App implements ViewHost {
   private view2d!: View2D;
   private view3d!: View3D;
   private toolbar!: Toolbar;
-  private toc!: TocPanel;
   private algebra!: AlgebraPanel;
   private course!: CoursePanel;
 
@@ -82,17 +79,17 @@ export class App implements ViewHost {
     const narrow = window.innerWidth < 900;
     const saved = safeParse<Layout>(store.get('dgs.layout'));
     this.layout = {
-      toc: !narrow,
       algebra: true,
       v2d: false,
       v3d: true,
       course: !narrow,
       cmd: true,
-      wToc: 270,
-      wAlgebra: 280,
-      wCourse: 400,
+      courseMax: false,
+      wAlgebra: 290,
+      wCourse: 470,
       ...(saved ?? {}),
     };
+    delete (this.layout as unknown as Record<string, unknown>).toc;
     this.applyThemeAttr(store.get('dgs.theme') as 'light' | 'dark' | null);
     this.buildDom();
     this.scene.on((e) => this.onScene(e));
@@ -117,7 +114,6 @@ export class App implements ViewHost {
           <button class="icon-btn" data-act="undo" title="Undo (Ctrl/⌘ Z)">${ICONS.undo}</button>
           <button class="icon-btn" data-act="redo" title="Redo (Ctrl/⌘ Shift Z)">${ICONS.redo}</button>
           <span class="sep"></span>
-          <button class="toggle-btn" data-panel="toc" title="Contents (table of the book)">${ICONS.contents}<span>Contents</span></button>
           <button class="toggle-btn" data-panel="algebra" title="Algebra view">${ICONS.algebra}<span>Algebra</span></button>
           <button class="toggle-btn" data-panel="v2d" title="2D graphics view">${ICONS.view2d}<span>2D</span></button>
           <button class="toggle-btn" data-panel="v3d" title="3D graphics view">${ICONS.view3d}<span>3D</span></button>
@@ -136,14 +132,13 @@ export class App implements ViewHost {
               <button data-act="theme">${ICONS.theme} Toggle light / dark</button>
               <button data-act="aux">${ICONS.eye} Show auxiliary objects</button>
               <hr>
-              <button data-act="home">${ICONS.help} Help / start page</button>
+              <button data-act="contents">${ICONS.contents} Contents of the book</button>
+              <button data-act="home">${ICONS.help} How to use the sandbox</button>
             </div>
           </div>
         </div>
       </header>
       <main class="workspace">
-        <aside class="panel" data-pane="toc"></aside>
-        <div class="splitter" data-split="toc"></div>
         <aside class="panel" data-pane="algebra"></aside>
         <div class="splitter" data-split="algebra"></div>
         <section class="graphics">
@@ -172,9 +167,6 @@ export class App implements ViewHost {
     });
     this.$('.toolbar-slot').append(this.toolbar.el);
 
-    this.toc = new TocPanel((id) => this.openEntry(id));
-    this.$('[data-pane=toc]').append(this.toc.el);
-
     this.algebra = new AlgebraPanel({
       scene: this.scene,
       selected: () => this._selected,
@@ -182,6 +174,10 @@ export class App implements ViewHost {
       commit: () => this.commit(),
       setSliderTransient: (n, v) => this.scene.setNumber(n, 'value', v),
       toggleAnimation: (n) => this.toggleAnimation(n),
+      setAnimationSpeed: (n, v) => {
+        this.scene.update(n, { style: { speed: v } });
+        this.commit();
+      },
       rename: (a, b) => this.scene.rename(a, b),
       remove: (n) => this.remove(n),
       openObject: (n) => this.openObject(n),
@@ -196,6 +192,13 @@ export class App implements ViewHost {
       loadedEntry: () => this.loaded,
       select: (n) => this.select(n),
       editObject: (n) => this.editObject(n),
+      openSection: (c, sct) => this.openSection(c, sct),
+      toggleMaximize: () => {
+        this.layout.courseMax = !this.layout.courseMax;
+        this.applyLayout();
+      },
+      isMaximized: () => this.layout.courseMax,
+      pageChanged: (pg) => this.pageChanged(pg),
     });
     this.$('[data-pane=course]').append(this.course.el);
 
@@ -286,7 +289,6 @@ export class App implements ViewHost {
   private applyLayout(): void {
     const L = this.layout;
     const show = (sel: string, on: boolean) => this.root.querySelectorAll<HTMLElement>(sel).forEach((e) => (e.style.display = on ? '' : 'none'));
-    show('[data-pane=toc], [data-split=toc]', L.toc);
     show('[data-pane=algebra], [data-split=algebra]', L.algebra);
     show('[data-pane=course], [data-split=course]', L.course);
     show('.cmdbar', L.cmd);
@@ -296,8 +298,9 @@ export class App implements ViewHost {
     show('.graphics-empty', !anyView);
     this.$('.graphics').classList.toggle('no-views', !anyView);
     this.$('.workspace').classList.toggle('no-views', !anyView);
+    this.$('.workspace').classList.toggle('course-max', L.course && L.courseMax);
+    this.course?.updateMaxButton();
     this.$('[data-split=algebra]').style.display = L.algebra ? '' : 'none';
-    this.$('[data-pane=toc]').style.width = `${L.wToc}px`;
     this.$('[data-pane=algebra]').style.width = `${L.wAlgebra}px`;
     this.$('[data-pane=course]').style.width = `${L.wCourse}px`;
     this.root.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach((b) => b.classList.toggle('on', !!L[b.dataset.panel as PanelId]));
@@ -319,12 +322,12 @@ export class App implements ViewHost {
   }
 
   private initSplitter(s: HTMLElement): void {
-    const which = s.dataset.split as 'toc' | 'algebra' | 'course';
+    const which = s.dataset.split as 'algebra' | 'course';
     s.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       s.setPointerCapture(e.pointerId);
       const x0 = e.clientX;
-      const key = which === 'toc' ? 'wToc' : which === 'algebra' ? 'wAlgebra' : 'wCourse';
+      const key = which === 'algebra' ? 'wAlgebra' : 'wCourse';
       const w0 = this.layout[key];
       const move = (ev: PointerEvent) => {
         const dx = ev.clientX - x0;
@@ -416,6 +419,42 @@ export class App implements ViewHost {
     this.commit();
   }
 
+  /** Objects defined by (curve, t0) can be dragged along their curve; returns the curve's name. */
+  curveHandle(name: string): string | null {
+    const o = this.scene.get(name);
+    const p = o?.data.params;
+    if (!p || typeof p.curve !== 'string' || p.t0 === undefined || p.along) return null;
+    const t0 = String(p.t0).trim();
+    const sl = this.scene.get(t0);
+    const sliderOk = sl?.data.type === 'slider' && /^\s*-?\d+(\.\d+)?\s*$/.test(String(sl.data.params.value));
+    if (!sliderOk && !/^-?\d+(\.\d+)?$/.test(t0)) return null;
+    return this.scene.value(p.curve)?.kind === 'curve' ? p.curve : null;
+  }
+
+  dragCurveParam(name: string, t: number): void {
+    const o = this.scene.get(name);
+    if (!o) return;
+    const c = this.scene.value(String(o.data.params.curve));
+    if (!c || c.kind !== 'curve') return;
+    t = Math.min(c.b, Math.max(c.a, t));
+    const t0 = String(o.data.params.t0).trim();
+    const sl = this.scene.get(t0);
+    const r = (x: number) => Math.round(x * 1000) / 1000;
+    if (sl && sl.data.type === 'slider') {
+      if (sl.data.style.animating) this.toggleAnimation(t0);
+      const nums = this.scene.allNumbers();
+      const ev = (v: ParamValue | undefined, d: number) => {
+        try {
+          return evalConst(String(v), nums);
+        } catch {
+          return d;
+        }
+      };
+      t = Math.min(ev(sl.data.params.max, t), Math.max(ev(sl.data.params.min, t), t));
+      this.scene.setNumber(t0, 'value', r(t));
+    } else this.scene.update(name, { params: { t0: String(r(t)) } });
+  }
+
   // ===========================================================================================
   // Scene events
 
@@ -492,15 +531,14 @@ export class App implements ViewHost {
     if (s && s.objects?.length) {
       this.restore(saved!);
       this.commit();
-      if (s.entry && getEntry(s.entry)) {
-        this.course.show({ kind: 'entry', id: s.entry });
-        this.toc.setCurrent(s.entry);
-      }
+      if (s.entry && getEntry(s.entry)) this.course.show({ kind: 'entry', id: s.entry });
+      this.view3d.fitSoon();
+      this.view2d.fitSoon();
       return;
     }
-    // first visit: start page + the Frenet figure
+    // first visit: the book's contents + the Frenet figure
     this.loadEntryScene('2.3.2', 'replace', false);
-    this.course.show({ kind: 'home' });
+    this.course.show({ kind: 'contents' });
   }
 
   /** Handles #entry=… and #scene=… (returns true if something was loaded). */
@@ -521,16 +559,40 @@ export class App implements ViewHost {
     const id = h.get('entry');
     if (id && getEntry(id)) {
       if (!initial && id === this.loaded) return true;
-      this.openEntry(id, false);
+      this.openEntry(id);
+      return true;
+    }
+    const sec = h.get('section');
+    if (sec && /^\d+\.\d+$/.test(sec)) {
+      const [c, n] = sec.split('.').map(Number);
+      if (initial) this.loadEntryScene('2.3.2', 'replace', false);
+      this.openSection(c, n);
       return true;
     }
     return false;
   }
 
+  /** Keep the URL in sync with the book page (shareable links to entries and sections). */
+  private pageChanged(page: CoursePage): void {
+    let hash = '';
+    if (page.kind === 'entry') hash = `#entry=${page.id}`;
+    else if (page.kind === 'section') hash = `#section=${page.chapter}.${page.section}`;
+    else if (page.kind !== 'contents') return;
+    if (location.hash !== hash) history.replaceState(null, '', hash || location.pathname + location.search);
+  }
+
+  openSection(chapter: number, section: number): void {
+    if (!this.layout.course) {
+      this.layout.course = true;
+      this.applyLayout();
+    }
+    this.course.show({ kind: 'section', chapter, section });
+  }
+
   // ===========================================================================================
   // Entries
 
-  openEntry(id: string, updateHash = true): void {
+  openEntry(id: string): void {
     const e = getEntry(id);
     if (!e) return;
     if (!this.layout.course) {
@@ -539,8 +601,6 @@ export class App implements ViewHost {
     }
     if (e.scene && hasContent(e)) this.loadEntryScene(id, 'replace', false);
     this.course.show({ kind: 'entry', id });
-    this.toc.setCurrent(id);
-    if (updateHash) history.replaceState(null, '', `#entry=${id}`);
   }
 
   loadedEntry(): string | null {
@@ -562,6 +622,13 @@ export class App implements ViewHost {
     }
     // views wanted by the entry
     const views = e.scene.views;
+    if (mode === 'add' && ((views.includes('2d') && !this.layout.v2d) || (views.includes('3d') && !this.layout.v3d))) {
+      if (views.includes('2d')) this.layout.v2d = true;
+      if (views.includes('3d')) this.layout.v3d = true;
+      this.applyLayout();
+      this.view3d.fitSoon();
+      this.view2d.fitSoon();
+    }
     if (mode === 'replace') {
       this.layout.v3d = views.includes('3d');
       this.layout.v2d = views.includes('2d');
@@ -715,8 +782,7 @@ export class App implements ViewHost {
         this.animating.clear();
         this.scene.clear();
         this.commit();
-        this.course.show({ kind: 'home' });
-        this.toc.setCurrent(null);
+        this.course.show({ kind: 'contents' });
         history.replaceState(null, '', location.pathname + location.search);
         return;
       case 'export':
@@ -736,11 +802,12 @@ export class App implements ViewHost {
         this.algebra.rebuild();
         return;
       case 'home':
+      case 'contents':
         if (!this.layout.course) {
           this.layout.course = true;
           this.applyLayout();
         }
-        this.course.show({ kind: 'home' });
+        this.course.show({ kind: act === 'home' ? 'help' : 'contents' });
         return;
       case 'cmdhelp': {
         const h = this.$('.cmd-help');

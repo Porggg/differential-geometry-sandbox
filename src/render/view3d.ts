@@ -39,6 +39,7 @@ export class View3D implements GraphicsView {
   private sphereGeo = new THREE.SphereGeometry(1, 20, 14);
   private extent = 4;
   private drag: { name: string; plane: THREE.Plane; offset: THREE.Vector3 } | null = null;
+  private curveDrag: { name: string; curve: string } | null = null;
   private downAt: { x: number; y: number } | null = null;
   private raf = 0;
 
@@ -599,6 +600,14 @@ export class View3D implements GraphicsView {
     const tool = this.host.tool();
     if (tool === 'move') {
       const name = this.pick(e);
+      const curve = name && !this.host.isDraggable(name) ? this.host.curveHandle(name) : null;
+      if (name && curve) {
+        this.curveDrag = { name, curve };
+        this.controls.enabled = false;
+        this.host.select(name);
+        this.renderer.domElement.setPointerCapture(e.pointerId);
+        return;
+      }
       if (name && this.host.isDraggable(name)) {
         const v = this.host.scene.value(name);
         if (v?.kind === 'point' && v.p.length === 3) {
@@ -627,6 +636,14 @@ export class View3D implements GraphicsView {
   }
 
   private onMove(e: PointerEvent): void {
+    if (this.curveDrag) {
+      const c = this.host.scene.value(this.curveDrag.curve);
+      if (c?.kind === 'curve') {
+        const t = this.nearestParam(e, c.f, c.a, c.b);
+        if (t !== null) this.host.dragCurveParam(this.curveDrag.name, t);
+      }
+      return;
+    }
     if (!this.drag) return;
     const hit = this.planeHit(e, this.drag.plane);
     if (!hit) return;
@@ -636,7 +653,7 @@ export class View3D implements GraphicsView {
   }
 
   private onUp(e: PointerEvent): void {
-    const wasDrag = !!this.drag;
+    const wasDrag = !!this.drag || !!this.curveDrag;
     this.endDrag();
     const moved = this.downAt && Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 4;
     this.downAt = null;
@@ -653,7 +670,49 @@ export class View3D implements GraphicsView {
     this.host.select(this.pick(e));
   }
 
+  /** Parameter of the curve point closest (on screen) to the mouse. */
+  private nearestParam(e: PointerEvent, f: (t: number) => Vec, a: number, b: number): number | null {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    const my = e.clientY - r.top;
+    const proj = (t: number): number => {
+      const p = f(t);
+      if (!p.every(Number.isFinite)) return Infinity;
+      const v = v3(p).project(this.camera);
+      if (v.z > 1) return Infinity;
+      const x = ((v.x + 1) / 2) * r.width;
+      const y = ((1 - v.y) / 2) * r.height;
+      return (x - mx) ** 2 + (y - my) ** 2;
+    };
+    const N = 800;
+    let best = -1;
+    let bd = Infinity;
+    for (let i = 0; i <= N; i++) {
+      const d = proj(a + ((b - a) * i) / N);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    if (best < 0) return null;
+    // refine between the neighbouring samples
+    let lo = a + ((b - a) * Math.max(0, best - 1)) / N;
+    let hi = a + ((b - a) * Math.min(N, best + 1)) / N;
+    for (let k = 0; k < 30; k++) {
+      const m1 = lo + (hi - lo) / 3;
+      const m2 = hi - (hi - lo) / 3;
+      if (proj(m1) < proj(m2)) hi = m2;
+      else lo = m1;
+    }
+    return (lo + hi) / 2;
+  }
+
   private endDrag(): void {
+    if (this.curveDrag) {
+      this.curveDrag = null;
+      this.controls.enabled = true;
+      this.host.endDrag();
+    }
     if (this.drag) {
       this.drag = null;
       this.controls.enabled = true;

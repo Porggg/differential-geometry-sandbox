@@ -29,7 +29,7 @@ export class View2D implements GraphicsView {
   private cy = 0;
   private selection: string | null = null;
   private pending = false;
-  private drag: { mode: 'pan' | 'point'; name?: string; x: number; y: number; cx: number; cy: number } | null = null;
+  private drag: { mode: 'pan' | 'point' | 'curve'; name?: string; curve?: string; x: number; y: number; cx: number; cy: number } | null = null;
   private downAt: { x: number; y: number } | null = null;
   private labels: Label[] = [];
   private legend: { tex: string; color: string }[] = [];
@@ -357,7 +357,7 @@ export class View2D implements GraphicsView {
           }
           c.stroke();
         });
-        if (cap) this.label(`${cap} = c`, [R * 0.75, R * 0.9], color, 0, 0);
+        if (cap && v.levels.length) this.label(`${cap} = ${v.levels.map((c) => Number(c.toPrecision(4))).join(',\\ ')}`, [R * 0.75, R * 0.9], color, 0, 0);
         return;
       }
       case 'mapping': {
@@ -501,7 +501,10 @@ export class View2D implements GraphicsView {
       if (!v || !o.data.style.visible) continue;
       let p: Vec | null = null;
       if (v.kind === 'point' && v.p.length === 2) p = v.p;
-      if (v.kind === 'vector' && v.p.length === 2) p = [v.p[0] + v.v[0], v.p[1] + v.v[1]];
+      if (v.kind === 'vector' && v.p.length === 2) {
+        // objects moving along a curve are grabbed at their point of application
+        p = this.host.curveHandle(o.data.name) ? v.p : [v.p[0] + v.v[0], v.p[1] + v.v[1]];
+      }
       if (!p) continue;
       const d = Math.hypot(this.X(p[0]) - px, this.Y(p[1]) - py);
       if (d < bd) {
@@ -543,6 +546,12 @@ export class View2D implements GraphicsView {
         this.host.select(name);
         return;
       }
+      const curve = name ? this.host.curveHandle(name) : null;
+      if (name && curve) {
+        this.drag = { mode: 'curve', name, curve, x, y, cx: this.cx, cy: this.cy };
+        this.host.select(name);
+        return;
+      }
     }
     this.drag = { mode: 'pan', x, y, cx: this.cx, cy: this.cy };
   }
@@ -554,6 +563,32 @@ export class View2D implements GraphicsView {
       this.cx = this.drag.cx - (x - this.drag.x) / this.sx;
       this.cy = this.drag.cy + (y - this.drag.y) / this.sy;
       this.redraw();
+    } else if (this.drag.mode === 'curve' && this.drag.name && this.drag.curve) {
+      const c = this.host.scene.value(this.drag.curve);
+      if (c?.kind !== 'curve' || c.dim !== 2) return;
+      const d2 = (t: number) => {
+        const p = c.f(t);
+        return (this.X(p[0]) - x) ** 2 + (this.Y(p[1]) - y) ** 2;
+      };
+      const N = 800;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i <= N; i++) {
+        const d = d2(c.a + ((c.b - c.a) * i) / N);
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      }
+      let lo = c.a + ((c.b - c.a) * Math.max(0, best - 1)) / N;
+      let hi = c.a + ((c.b - c.a) * Math.min(N, best + 1)) / N;
+      for (let k = 0; k < 30; k++) {
+        const m1 = lo + (hi - lo) / 3;
+        const m2 = hi - (hi - lo) / 3;
+        if (d2(m1) < d2(m2)) hi = m2;
+        else lo = m1;
+      }
+      this.host.dragCurveParam(this.drag.name, (lo + hi) / 2);
     } else if (this.drag.name) {
       const [wx, wy] = this.toWorld(x, y);
       const r = (v: number) => Math.round(v * 20) / 20;
@@ -567,7 +602,7 @@ export class View2D implements GraphicsView {
     this.drag = null;
     const moved = this.downAt && Math.hypot(x - this.downAt.x, y - this.downAt.y) > 4;
     this.downAt = null;
-    if (d?.mode === 'point') {
+    if (d?.mode === 'point' || d?.mode === 'curve') {
       this.host.endDrag();
       return;
     }
