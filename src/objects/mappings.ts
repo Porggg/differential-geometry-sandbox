@@ -25,6 +25,7 @@ const mapping: ObjectType = {
     P.expr('box', 'Image of the grid in [−R, R]ⁿ, R ='),
     P.int('lines', 'Grid lines per direction', 2, 30),
     P.bool('showDomain', 'Also draw the original grid (faint)'),
+    P.vec('center', 'Grid centered at', dim, [], { help: 'Draw the image of a small grid around this point (e.g. to see F near a point).' }),
     { key: 'dim', label: 'dim', kind: 'int', min: 2, max: 3, when: () => false },
   ],
   defaults: (dim) =>
@@ -48,11 +49,12 @@ const mapping: ObjectType = {
     const vars = coordVars(dim);
     const parts = arr(p.comps);
     if (parts.length !== dim) throw new Error(`the sandbox draws mappings R^${dim} → R^${dim}: give ${dim} coordinate functions`);
-    const env = { vars, numbers: ctx.numbers, functions: ctx.functions };
+    const env = { vars, numbers: ctx.numbers, functions: ctx.functions, points: ctx.points };
     const exprs = parts.map((s) => resolve(parse(s), env));
     const f = compileNodes(exprs, vars, ctx);
     const jac = exprs.map((e) => vars.map((x) => derivative(e, x)));
-    return { kind: 'mapping', n: dim, m: dim, vars, exprs, f, jac, box: ctx.num(str(p.box, '1')), lines: Number(p.lines ?? 5), showDomain: !!p.showDomain };
+    const center = str(p.center).trim() ? pointOf(ctx, p.center, dim) : vars.map(() => 0);
+    return { kind: 'mapping', n: dim, m: dim, vars, exprs, f, jac, box: ctx.num(str(p.box, '1')), lines: Number(p.lines ?? 5), showDomain: !!p.showDomain, center };
   },
   caption: (o) => nameOf(o),
   algebra: (o, v) => {
@@ -76,7 +78,7 @@ const mapping: ObjectType = {
       `$$J = \\left(\\frac{\\partial f_i}{\\partial x_j}\\right) = ${texNodeMat(v.jac)}$$\n\n` +
       (detTex ? `$\\det J = ${detTex}$. ` : '') +
       `$${n}$ is **regular** ([[1.7.9]]) when $${n}_{*p}$ is one-to-one at every $p$, i.e. $\\det J(p) \\ne 0$; then by the inverse function theorem ([[1.7.10]]) it is a local diffeomorphism.\n\n` +
-      `Drawn: the image under $${n}$ of the coordinate grid of $[-${fmt(v.box)}, ${fmt(v.box)}]^${v.n}$ (${v.lines} lines per direction).`
+      `Drawn: the image under $${n}$ of the coordinate grid of the ${v.n === 2 ? 'square' : 'cube'} of half-side $${fmt(v.box)}$ centered at $${texVec(v.center)}$ (${v.lines} lines per direction).`
     );
   },
   defaultColor: COLORS.mapping,
@@ -142,7 +144,11 @@ const imageCurve: ObjectType = {
     return numericCurve(F.m, c.param, c.a, c.b, (t) => F.f(c.f(t)));
   },
   caption: (o, cx) => `${lbl(cx, o.params.F)}(${lbl(cx, o.params.curve)})`,
-  algebra: (o, v, cx) => `${nameOf(o)} = ${lbl(cx, o.params.F)}(${lbl(cx, o.params.curve)})${v?.kind === 'curve' && v.exprs ? ` = ${texNodes(v.exprs)}` : ''}`,
+  algebra: (o, v, cx) => {
+    const img = `${lbl(cx, o.params.F)}(${lbl(cx, o.params.curve)})`;
+    const head = o.style.caption ? img : `${nameOf(o)} = ${img}`;
+    return `${head}${v?.kind === 'curve' && v.exprs ? ` = ${texNodes(v.exprs)}` : ''}`;
+  },
   course: (o, _v, cx) =>
     `Definition [[1.7.2]]: the image of the curve $${lbl(cx, o.params.curve)}$ under $${lbl(cx, o.params.F)}$ is the composite curve $${lbl(cx, o.params.F)}(${lbl(cx, o.params.curve)})$. ` +
     `Corollary [[1.7.7]]: its velocity is $\\beta' = ${lbl(cx, o.params.F)}_*(${lbl(cx, o.params.curve)}')$ — try it with **Velocity** and **Tangent map**.`,

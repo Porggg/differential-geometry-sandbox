@@ -3,8 +3,8 @@
 import { register } from '../core/registry';
 import type { CurveValue, ObjectType, Value } from '../core/types';
 import { linspace } from '../math/numeric';
-import { cross, dot, fmt, norm, scale, sub, add, type Vec } from '../math/vec';
-import { COLORS, P, exprTex, getCurve, lbl, str, texVec } from './common';
+import { cross, dot, fmt, norm, normalize, scale, sub, add, type Vec } from '../math/vec';
+import { COLORS, P, arr, exprTex, getCurve, lbl, str, texVec } from './common';
 
 export interface Frenet {
   T: Vec;
@@ -32,6 +32,14 @@ export function frenetAt(c: CurveValue, t: number): Frenet {
   const N = cross(B, T);
   const tau = dot(c12, d3) / (n12 * n12);
   return { T, N, B, kappa, tau, v };
+}
+
+/** Signed curvature of a plane curve: (x'y'' − y'x'')/v³ (§3.5, Exercise 8). */
+export function signedCurvature2(c: CurveValue, t: number): number {
+  const d1 = c.d1(t);
+  const d2 = c.d2(t);
+  const v = Math.hypot(d1[0], d1[1]);
+  return (d1[0] * d2[1] - d1[1] * d2[0]) / (v * v * v);
 }
 
 /** Curvature only (no κ > 0 requirement). */
@@ -158,6 +166,8 @@ const curvaturePlot: ObjectType = {
     P.bool('tau', 'Torsion τ'),
     P.bool('speed', 'Speed v'),
     P.bool('ratio', 'Ratio τ/κ (Theorem 2.4.6)'),
+    P.bool('Tu', 'T • u for a unit vector u (Definition 2.4.5)'),
+    P.vec('u', 'u =', 3, [], { when: (p) => !!p.Tu }),
     P.expr('marker', 'Marker at t = (optional)', [], { optional: true }),
   ],
   defaults: (_d, ctx) => ({ curve: ctx.find(['curve'])[0] ?? '', kappa: true, tau: true, speed: false, ratio: false, marker: ctx.hasNumber('t0') ? 't0' : '' }),
@@ -171,16 +181,21 @@ const curvaturePlot: ObjectType = {
         return NaN;
       }
     };
-    if (p.kappa) series.push({ label: '\\kappa', color: '#1a7f37', f: safe((t) => curvatureAt(c, t)) });
+    if (p.kappa && c.dim === 2) series.push({ label: '\\tilde\\kappa', color: '#1a7f37', f: safe((t) => signedCurvature2(c, t)) });
+    else if (p.kappa) series.push({ label: '\\kappa', color: '#1a7f37', f: safe((t) => curvatureAt(c, t)) });
     if (p.tau && c.dim === 3) series.push({ label: '\\tau', color: '#0550ae', f: safe((t) => frenetAt(c, t).tau) });
     if (p.speed) series.push({ label: 'v', color: '#9a6700', f: safe((t) => norm(c.d1(t))) });
     if (p.ratio && c.dim === 3) series.push({ label: '\\tau/\\kappa', color: '#8250df', f: safe((t) => { const F = frenetAt(c, t); return F.tau / F.kappa; }) });
+    if (p.Tu && c.dim === 3) {
+      const u = normalize(arr(p.u).map((s) => ctx.num(s)));
+      series.push({ label: 'T \\bullet u', color: '#bf3989', f: safe((t) => dot(normalize(c.d1(t)), u)) });
+    }
     const m = str(p.marker).trim();
     return { kind: 'plot', a: c.a, b: c.b, series, marker: m ? ctx.num(m) : undefined };
   },
   caption: (o, cx) => `\\kappa, \\tau \\text{ of } ${lbl(cx, o.params.curve)}`,
   algebra: (o, _v, cx) => {
-    const q = [o.params.kappa && '\\kappa', o.params.tau && '\\tau', o.params.speed && 'v', o.params.ratio && '\\tau/\\kappa'].filter(Boolean);
+    const q = [o.params.kappa && '\\kappa', o.params.tau && '\\tau', o.params.speed && 'v', o.params.ratio && '\\tau/\\kappa', o.params.Tu && 'T \\bullet u'].filter(Boolean);
     return `\\text{plot of } ${q.join(', ')} \\text{ for } ${lbl(cx, o.params.curve)}`;
   },
   course: (o, _v, cx) =>
@@ -239,7 +254,7 @@ const osculatingCircle: ObjectType = {
   algebra: (o, v, cx) => `\\text{osculating circle of } ${lbl(cx, o.params.curve)}${v?.kind === 'circle' ? `:\\ r = ${fmt(v.r)}` : ''}`,
   course: (o, v, cx) =>
     v.kind === 'circle'
-      ? `The osculating circle (an exercise of §2.3, p. 67) lies in the osculating plane, has center $${lbl(cx, o.params.curve)}(t_0) + \\frac{1}{\\kappa} N(t_0) = ${texVec(v.c)}$ ` +
+      ? `The osculating circle (Exercise 6 of §2.3) lies in the osculating plane, has center $${lbl(cx, o.params.curve)}(t_0) + \\frac{1}{\\kappa} N(t_0) = ${texVec(v.c)}$ ` +
         `(the center of curvature) and radius $1/\\kappa = ${fmt(v.r, 5)}$. It is the circle that best approximates the curve at $t_0$; compare [[2.3.6]].`
       : '',
   defaultColor: '#8250df',

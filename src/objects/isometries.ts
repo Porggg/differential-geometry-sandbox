@@ -200,7 +200,12 @@ export function isoCurve(F: IsometryValue, c: CurveValue, ctx: ComputeCtx): Curv
     const nodes = [0, 1, 2].map((i) => addNodes([num(F.a[i]), ...[0, 1, 2].map((j) => mulNodes(num(F.C[i][j]), c.exprs![j]))]));
     return curveFromNodes(nodes, c.param, c.a, c.b, ctx);
   }
-  return numericCurve(3, c.param, c.a, c.b, (t) => add(F.a, matvec(F.C, c.f(t))));
+  // keep the curve's own derivatives (they may be exact even when the curve is only known numerically)
+  const out = numericCurve(3, c.param, c.a, c.b, (t) => add(F.a, matvec(F.C, c.f(t))));
+  out.d1 = (t) => matvec(F.C, c.d1(t));
+  out.d2 = (t) => matvec(F.C, c.d2(t));
+  out.d3 = (t) => matvec(F.C, c.d3(t));
+  return out;
 }
 
 const image: ObjectType = {

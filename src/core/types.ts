@@ -133,6 +133,8 @@ export interface MappingValue extends Base {
   box: number;
   lines: number;
   showDomain: boolean;
+  /** The drawn grid is the cube/square of half-size box around this point. */
+  center: Vec;
 }
 export interface IsometryValue extends Base {
   kind: 'isometry';
@@ -254,6 +256,8 @@ export interface ComputeCtx {
   numbers: Record<string, number>;
   /** Scene scalar functions usable in expressions (inlined). */
   functions: Record<string, UserFunction>;
+  /** Points (and vector parts of tangent vectors) usable as x(p), y(p), z(p). */
+  points: Record<string, number[]>;
   /** Evaluate a constant expression. */
   num(src: string | number): number;
 }

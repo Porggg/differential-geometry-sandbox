@@ -1,3 +1,6 @@
+import { CH1 } from './ch1';
+import { CH2 } from './ch2';
+import { CH3 } from './ch3';
 import { ENTRIES } from './entries';
 import { NOTIONS } from './notions';
 import { CHAPTERS, SECTIONS, baseEntries } from './toc';
@@ -5,7 +8,7 @@ import type { Entry } from './types';
 
 const byId = new Map<string, Entry>();
 for (const e of baseEntries()) byId.set(e.id, e);
-for (const patch of [...ENTRIES, ...NOTIONS]) {
+for (const patch of [...ENTRIES, ...NOTIONS, ...CH1, ...CH2, ...CH3]) {
   const base = byId.get(patch.id!);
   if (!base) throw new Error(`content for unknown entry ${patch.id}`);
   byId.set(base.id, { ...base, ...patch });

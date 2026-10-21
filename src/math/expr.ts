@@ -146,7 +146,11 @@ export interface ExprEnv {
   numbers: Record<string, number>;
   /** Scene scalar functions that get inlined (O'Neill writes fg for the product of functions). */
   functions?: Record<string, UserFunction>;
+  /** Scene points (and vector parts of tangent vectors), for the coordinate functions x(p), y(p), z(p). */
+  points?: Record<string, number[]>;
 }
+
+const COORD_INDEX: Record<string, number> = { x: 0, y: 1, z: 2, x1: 0, x2: 1, x3: 2 };
 
 /** Inline user functions, apply coordinate aliases, and check that every symbol is known. */
 export function resolve(node: Node, env: ExprEnv): Node {
@@ -167,6 +171,13 @@ export function resolve(node: Node, env: ExprEnv): Node {
     }
     if (n.type === 'FunctionNode') {
       const name = n.fn.name ?? n.name;
+      // natural coordinate functions applied to a point: x(p) = p1 (Definition 1.1.2)
+      if (name in COORD_INDEX && n.args.length === 1 && n.args[0].type === 'SymbolNode' && env.points?.[n.args[0].name]) {
+        const pt = env.points[n.args[0].name];
+        const i = COORD_INDEX[name];
+        if (i >= pt.length) throw new Error(`${n.args[0].name} has only ${pt.length} coordinates`);
+        return new math.ConstantNode(pt[i]);
+      }
       const f = fns[name];
       if (f) {
         if (n.args.length !== f.vars.length) throw new Error(`${name} expects ${f.vars.length} argument(s)`);
@@ -290,8 +301,13 @@ export function scalar(src: string | Node, env: ExprEnv): { node: Node; f: (v: n
 }
 
 /** Evaluate a constant expression (no free variables) to a number. */
-export function evalConst(src: string, numbers: Record<string, number>, functions?: Record<string, UserFunction>): number {
-  const { f } = scalar(src, { vars: [], numbers, functions });
+export function evalConst(
+  src: string,
+  numbers: Record<string, number>,
+  functions?: Record<string, UserFunction>,
+  points?: Record<string, number[]>,
+): number {
+  const { f } = scalar(src, { vars: [], numbers, functions, points });
   const x = f([]);
   if (!Number.isFinite(x)) throw new Error(`“${src}” does not evaluate to a finite number`);
   return x;

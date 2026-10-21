@@ -42,7 +42,38 @@ export const P = {
 };
 
 export const str = (v: ParamValue | undefined, d = ''): string => (v === undefined ? d : Array.isArray(v) ? v.join(', ') : String(v));
-export const arr = (v: ParamValue | undefined): string[] => (Array.isArray(v) ? v : typeof v === 'string' ? splitTuple(v) : []);
+/** Components of a tuple parameter. Accepts "(a, b, c)", and a tuple times / divided by a scalar: "(a, b)/k", "k*(a, b)". */
+export function arr(v: ParamValue | undefined): string[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v !== 'string') return [];
+  const s = v.trim();
+  const match = (from: number, dir: 1 | -1): number => {
+    let depth = 0;
+    for (let i = from; i >= 0 && i < s.length; i += dir) {
+      if (s[i] === '(') depth += dir;
+      if (s[i] === ')') depth -= dir;
+      if (depth === 0) return i;
+    }
+    return -1;
+  };
+  if (s.startsWith('(')) {
+    const close = match(0, 1);
+    const rest = close > 0 ? /^\s*([*/])\s*(.+)$/.exec(s.slice(close + 1)) : null;
+    if (rest) {
+      const parts = splitTuple(s.slice(0, close + 1));
+      if (parts.length >= 2) return parts.map((x) => `(${x})${rest[1]}(${rest[2]})`);
+    }
+  }
+  if (s.endsWith(')')) {
+    const open = match(s.length - 1, -1);
+    const pre = open > 0 ? /^(.+?)\s*\*\s*$/.exec(s.slice(0, open)) : null;
+    if (pre) {
+      const parts = splitTuple(s.slice(open));
+      if (parts.length >= 2) return parts.map((x) => `(${pre[1]})*(${x})`);
+    }
+  }
+  return splitTuple(s);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Evaluation helpers
@@ -55,7 +86,7 @@ export function numVec(v: ParamValue | undefined, ctx: ComputeCtx, size: number,
 
 /** Compile vector-valued expression components in the given variables. */
 export function compileVec(parts: string[], vars: string[], ctx: ComputeCtx): { nodes: Node[]; f: (x: Vec) => Vec } {
-  const env = { vars, numbers: ctx.numbers, functions: ctx.functions };
+  const env = { vars, numbers: ctx.numbers, functions: ctx.functions, points: ctx.points };
   const comps = parts.map((s) => scalar(s, env));
   return { nodes: comps.map((c) => c.node), f: (x: Vec) => comps.map((c) => c.f(x)) };
 }
@@ -92,7 +123,7 @@ export function curveFromNodes(nodes: Node[], param: string, a: number, b: numbe
 }
 
 export function curveFromStrings(parts: string[], param: string, a: number, b: number, ctx: ComputeCtx): CurveValue {
-  const env = { vars: [param], numbers: ctx.numbers, functions: ctx.functions };
+  const env = { vars: [param], numbers: ctx.numbers, functions: ctx.functions, points: ctx.points };
   const nodes = parts.map((s) => resolve(parse(s), env));
   return curveFromNodes(nodes, param, a, b, ctx);
 }

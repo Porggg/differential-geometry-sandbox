@@ -123,7 +123,8 @@ export class View2D implements GraphicsView {
           break;
         case 'mapping':
           if (v.n === 2) {
-            for (const a of linspace(-v.box, v.box, 9)) for (const c of linspace(-v.box, v.box, 9)) addPt(v.f([a, c]));
+            for (const a of linspace(-v.box, v.box, 9)) for (const c of linspace(-v.box, v.box, 9)) addPt(v.f([v.center[0] + a, v.center[1] + c]));
+            if (v.showDomain) (addPt([v.center[0] - v.box, v.center[1] - v.box]), addPt([v.center[0] + v.box, v.center[1] + v.box]));
             onlyPlots = false;
           }
           break;
@@ -362,6 +363,7 @@ export class View2D implements GraphicsView {
       }
       case 'mapping': {
         if (v.n !== 2) return;
+        const [cx0, cy0] = v.center;
         const ticks = linspace(-v.box, v.box, Math.max(2, v.lines));
         const ss = linspace(-v.box, v.box, 120);
         if (v.showDomain) {
@@ -370,15 +372,15 @@ export class View2D implements GraphicsView {
           c.globalAlpha = 0.35;
           c.lineWidth = 1;
           for (const a of ticks) {
-            this.polyline([[a, -v.box], [a, v.box]]);
-            this.polyline([[-v.box, a], [v.box, a]]);
+            this.polyline([[cx0 + a, cy0 - v.box], [cx0 + a, cy0 + v.box]]);
+            this.polyline([[cx0 - v.box, cy0 + a], [cx0 + v.box, cy0 + a]]);
           }
           c.restore();
         }
         c.lineWidth = sel ? 2 : 1.3;
         for (const a of ticks) {
-          this.polyline(ss.map((s) => v.f([a, s])));
-          this.polyline(ss.map((s) => v.f([s, a])));
+          this.polyline(ss.map((s) => v.f([cx0 + a, cy0 + s])));
+          this.polyline(ss.map((s) => v.f([cx0 + s, cy0 + a])));
         }
         return;
       }

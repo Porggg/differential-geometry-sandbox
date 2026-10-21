@@ -27,12 +27,14 @@ const fn: ObjectType = {
   compute: (p, ctx): Value => {
     const dim = Number(p.dim ?? 3);
     const vars = coordVars(dim);
-    const { node, f } = scalar(str(p.expr), { vars, numbers: ctx.numbers, functions: ctx.functions });
+    const { node, f } = scalar(str(p.expr), { vars, numbers: ctx.numbers, functions: ctx.functions, points: ctx.points });
     const levels = str(p.levels).trim() === '' ? [] : splitTuple(str(p.levels)).map((s) => ctx.num(s));
     return { kind: 'function', dim, vars, f, expr: node, levels, box: ctx.num(str(p.box, '2')), res: Number(p.res ?? 36) };
   },
   caption: (o) => nameOf(o),
-  algebra: (o, v) => `${nameOf(o)} = ${v && v.kind === 'function' ? tex(v.expr) : texOfSource(str(o.params.expr))}`,
+  algebra: (o, v) =>
+    `${nameOf(o)} = ${v && v.kind === 'function' ? tex(v.expr) : texOfSource(str(o.params.expr))}` +
+    (v && v.kind === 'function' && v.levels.length ? `\\quad (\\text{drawn: } ${nameOf(o)} = ${v.levels.map((c) => Number(c.toPrecision(4))).join(',\\ ')})` : ''),
   course: (o, v) => {
     if (v.kind !== 'function') return '';
     const n = nameOf(o);
@@ -78,7 +80,7 @@ const vectorField: ObjectType = {
     const vars = coordVars(dim);
     const parts = arr(p.comps);
     if (parts.length !== dim) throw new Error(`a vector field on R^${dim} needs ${dim} components`);
-    const env = { vars, numbers: ctx.numbers, functions: ctx.functions };
+    const env = { vars, numbers: ctx.numbers, functions: ctx.functions, points: ctx.points };
     const nodes = parts.map((s) => resolve(parse(s), env));
     const f = compileNodes(nodes, vars, ctx);
     return { kind: 'field', dim, f, exprs: nodes, box: ctx.num(str(p.box, '2')), n: Number(p.n ?? 5), scale: ctx.num(str(p.scale, '0.3')) };
@@ -188,7 +190,7 @@ const fieldOnFunction: ObjectType = {
     const f = getFunction(ctx, p.f);
     if (V.dim !== f.dim) throw new Error('V and f live in different dimensions');
     const expr = addNodes(f.vars.map((x, i) => mulNodes(V.exprs[i], derivative(f.expr, x))));
-    const { f: fun } = scalar(expr, { vars: f.vars, numbers: ctx.numbers, functions: ctx.functions });
+    const { f: fun } = scalar(expr, { vars: f.vars, numbers: ctx.numbers, functions: ctx.functions, points: ctx.points });
     const levels = str(p.levels).trim() === '' ? [] : splitTuple(str(p.levels)).map((s) => ctx.num(s));
     return { kind: 'function', dim: f.dim, vars: f.vars, f: fun, expr, levels, box: f.box, res: f.res };
   },

@@ -54,3 +54,13 @@ describe('command bar', () => {
     expect(s.value('a')).toMatchObject({ value: 5 });
   });
 });
+
+import ch1Src from '../src/content/ch1.ts?raw';
+import ch2Src from '../src/content/ch2.ts?raw';
+import ch3Src from '../src/content/ch3.ts?raw';
+
+describe('content sources', () => {
+  it('never contain "${" (it would be a template interpolation inside TeX)', () => {
+    for (const [name, src] of [['ch1', ch1Src], ['ch2', ch2Src], ['ch3', ch3Src]]) expect(src.includes('$' + '{'), name).toBe(false);
+  });
+});

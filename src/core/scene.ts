@@ -284,7 +284,8 @@ export class Scene {
         for (const s of symbolsOf(node)) if (this.objs.has(s) && s !== data.name) out.add(s);
         for (const f of calledFunctionsOf(node)) if (this.objs.has(f) && f !== data.name) out.add(f);
       } catch {
-        /* reported at compute time */
+        // not a single expression (e.g. a scaled tuple "(a, b)/k"): scan identifiers
+        for (const id of src.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []) if (this.objs.has(id) && id !== data.name) out.add(id);
       }
     };
     for (const spec of specs) {
@@ -371,12 +372,17 @@ export class Scene {
 
   private ctxFor(o: SceneObj): ComputeCtx {
     const deps = new Set(o.deps);
-    // Only expose numbers/functions that are declared dependencies (keeps the graph honest).
-    const numbers: Record<string, number> = {};
+    // Numbers: all those computed so far (expressions inherited from other objects may contain their sliders;
+    // the topological order guarantees they are up to date). Functions and points: declared dependencies only.
+    const numbers: Record<string, number> = { ...this.numbers };
+    delete numbers[o.data.name];
     const functions: Record<string, UserFunction> = {};
+    const points: Record<string, number[]> = {};
     for (const d of deps) {
-      if (d in this.numbers) numbers[d] = this.numbers[d];
       if (d in this.functions) functions[d] = this.functions[d];
+      const v = this.objs.get(d)?.value;
+      if (v?.kind === 'point') points[d] = v.p;
+      if (v?.kind === 'vector') points[d] = v.v;
     }
     return {
       get: (name: string) => {
@@ -387,7 +393,8 @@ export class Scene {
       },
       numbers,
       functions,
-      num: (src: string | number) => (typeof src === 'number' ? src : evalConst(String(src), numbers, functions)),
+      points,
+      num: (src: string | number) => (typeof src === 'number' ? src : evalConst(String(src), numbers, functions, points)),
     };
   }
 

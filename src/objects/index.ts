@@ -8,3 +8,4 @@ import './mappings';
 import './measure';
 import './framefields';
 import './isometries';
+import './more';

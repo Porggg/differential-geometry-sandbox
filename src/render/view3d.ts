@@ -376,9 +376,10 @@ export class View3D implements GraphicsView {
       }
       case 'mapping': {
         if (v.n !== 3) return false;
-        const segs = gridImageSegments(v.f, v.box, v.lines, 36);
+        const shift = (x: Vec) => x.map((xi, i) => xi + v.center[i]);
+        const segs = gridImageSegments((x) => v.f(shift(x)), v.box, v.lines, 36);
         g.add(this.makeSegments(segs, color, sel ? 2.4 : 1.6, 0.9));
-        if (v.showDomain) g.add(this.makeSegments(gridImageSegments((x) => x, v.box, v.lines, 2), cssVar('--muted', '#999'), 1, 0.35));
+        if (v.showDomain) g.add(this.makeSegments(gridImageSegments(shift, v.box, v.lines, 2), cssVar('--muted', '#999'), 1, 0.35));
         return true;
       }
       case 'framefield': {

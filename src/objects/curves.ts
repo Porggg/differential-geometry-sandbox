@@ -9,6 +9,7 @@ import {
   COLORS, P, arr, compileVec, curveFromNodes, curveFromStrings, exprTex, getCurve, lbl, nameOf, numericCurve, str, texNodes, texNum,
   texParts, texVec, texVecAt,
 } from './common';
+import { frenetAt } from './frenet';
 
 const PARAMS = [
   { value: 't', label: 't' },
@@ -198,7 +199,7 @@ const reparametrization: ObjectType = {
   defaults: (_d, ctx) => ({ curve: ctx.find(['curve'])[0] ?? '', h: 's^2', c: '-2', d: '2' }),
   compute: (p, ctx) => {
     const c = getCurve(ctx, p.curve);
-    const env = { vars: ['s'], numbers: ctx.numbers, functions: ctx.functions };
+    const env = { vars: ['s'], numbers: ctx.numbers, functions: ctx.functions, points: ctx.points };
     const h = resolve(parse(str(p.h)), env);
     const a = ctx.num(str(p.c, '0'));
     const b = ctx.num(str(p.d, '1'));
@@ -327,12 +328,16 @@ const curveField: ObjectType = {
       { value: 'custom', label: 'Y(t) given by coordinates' },
       { value: 'velocity', label: "Velocity α'" },
       { value: 'acceleration', label: "Acceleration α''" },
+      { value: 'frenet', label: 'Y = a T + b N + c B (Frenet frame, R³)' },
+      { value: 'restriction', label: 'Restriction W(α(t)) of a vector field W' },
     ]),
+    P.ref('W', 'Vector field W', ['field'], { when: (p) => p.mode === 'restriction' }),
     P.vec('comps', 'Y(t) = (y₁, y₂, y₃) in the curve parameter', 3, ['t', 's', 'u'], { when: (p) => p.mode === 'custom' }),
+    P.vec('fcomps', 'Coefficients (a, b, c) of T, N, B', 3, ['t', 's', 'u'], { when: (p) => p.mode === 'frenet' }),
     P.int('n', 'Number of arrows', 2, 80),
     P.expr('scale', 'Arrow length factor'),
   ],
-  defaults: (_d, ctx) => ({ curve: ctx.find(['curve'])[0] ?? '', mode: 'velocity', comps: '(0, 0, 1)', n: 16, scale: 1 }),
+  defaults: (_d, ctx) => ({ curve: ctx.find(['curve'])[0] ?? '', mode: 'velocity', comps: '(0, 0, 1)', fcomps: '(1, 0, 0)', n: 16, scale: 1 }),
   compute: (p, ctx): VectorsValue => {
     const c = getCurve(ctx, p.curve);
     const n = Number(p.n ?? 16);
@@ -340,13 +345,30 @@ const curveField: ObjectType = {
     let Y: (t: number) => Vec;
     if (p.mode === 'velocity') Y = c.d1;
     else if (p.mode === 'acceleration') Y = c.d2;
-    else {
+    else if (p.mode === 'restriction') {
+      const W = ctx.get(str(p.W));
+      if (W.kind !== 'field' || W.dim !== c.dim) throw new Error('choose a vector field in the same dimension as the curve');
+      Y = (t) => W.f(c.f(t));
+    } else if (p.mode === 'frenet') {
+      const g = compileVec(arr(p.fcomps), [c.param], ctx).f;
+      Y = (t) => {
+        const F = frenetAt(c, t);
+        const [a, b, cc] = g([t]);
+        return [0, 1, 2].map((i) => a * F.T[i] + b * F.N[i] + cc * F.B[i]);
+      };
+    } else {
       const parts = arr(p.comps);
       if (parts.length !== c.dim) throw new Error(`Y needs ${c.dim} components`);
       const g = compileVec(parts, [c.param], ctx).f;
       Y = (t) => g([t]);
     }
-    const items = linspace(c.a, c.b, n).map((t) => ({ p: c.f(t), v: Y(t).map((x) => x * sc) }));
+    const items = linspace(c.a, c.b, n).flatMap((t) => {
+      try {
+        return [{ p: c.f(t), v: Y(t).map((x) => x * sc) }];
+      } catch {
+        return [];
+      }
+    });
     return { kind: 'vectors', items };
   },
   caption: (o) => nameOf(o),
@@ -354,6 +376,11 @@ const curveField: ObjectType = {
     const a = lbl(cx, o.params.curve);
     if (o.params.mode === 'velocity') return `${nameOf(o)} = ${a}'`;
     if (o.params.mode === 'acceleration') return `${nameOf(o)} = ${a}''`;
+    if (o.params.mode === 'restriction') return `${nameOf(o)}(t) = ${lbl(cx, o.params.W)}(${a}(t))`;
+    if (o.params.mode === 'frenet') {
+      const [x, y, z] = arr(o.params.fcomps).map((e) => texOfSource(e));
+      return `${nameOf(o)} = ${x}\\,T + ${y}\\,N + ${z}\\,B \\text{ on } ${a}`;
+    }
     return `${nameOf(o)}(t) = ${texParts(arr(o.params.comps))}_{${a}(t)}`;
   },
   course: (o, _v, cx) =>

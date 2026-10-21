@@ -68,7 +68,7 @@ const frameField: ObjectType = {
     const preset = str(p.preset, 'cylindrical');
     const pr = PRESETS[preset];
     const comps = pr ? pr.comps : [str(p.E1), str(p.E2), str(p.E3)];
-    const env = { vars: XYZ, numbers: ctx.numbers, functions: ctx.functions };
+    const env = { vars: XYZ, numbers: ctx.numbers, functions: ctx.functions, points: ctx.points };
     const A = comps.map((c) => {
       const parts = arr(c);
       if (parts.length !== 3) throw new Error('each Eᵢ needs 3 coordinates');

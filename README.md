@@ -40,8 +40,10 @@ The base path is set in `vite.config.ts` (`/differential-geometry-sandbox/`); ch
 | `src/core/` | object model, dependency graph (`scene.ts`), command parser |
 | `src/objects/` | one file per toolbar group: the object types and their Course-view details |
 | `src/render/` | 3D view (three.js) and 2D view (canvas) |
-| `src/content/` | table of contents (`toc.ts`), written entries (`entries.ts`, `notions.ts`) |
+| `src/content/` | table of contents (`toc.ts`), entries (`ch1.ts`, `ch2.ts`, `ch3.ts`, `entries.ts`, `notions.ts`), check helpers |
 | `src/ui/` | panels: contents, algebra, course, toolbar, forms |
 
-Adding an entry: add an object to `ENTRIES` in `src/content/entries.ts` with `statement`, `proof`, `notes`, `scene` and `checks`;
-`npm test` builds its figure and runs its checks.
+Content: `src/content/ch1.ts`, `ch2.ts`, `ch3.ts` (plus `entries.ts`, `notions.ts`) hold every entry of Chapters 1–3 —
+statement, proof (same structure as the book, our wording), explanation, figure (`scene`) and live `checks`.
+`npm test` builds every figure and runs every check. Write TeX inside the `md` raw template and never write a dollar sign
+directly followed by an opening brace (a test enforces it).

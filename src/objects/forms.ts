@@ -3,7 +3,7 @@
 import { register } from '../core/registry';
 import type { ComputeCtx, FormValue, ObjectType, ParamValue, Value } from '../core/types';
 import { parse, resolve, tex } from '../math/expr';
-import { DEGREE_NAMES, addForms, d, evalOneForm, form, formTex, wedge } from '../math/forms';
+import { DEGREE_NAMES, addForms, d, evalOneForm, form, formTex, negForm, wedge } from '../math/forms';
 import { fmt } from '../math/vec';
 import { P, XYZ, arr, getVector, lbl, nameOf, str, texNum, texVec } from './common';
 
@@ -15,7 +15,7 @@ const formOrFunction = (ctx: ComputeCtx, name: ParamValue | undefined): FormValu
 };
 
 const compileComps = (parts: string[], ctx: ComputeCtx) => {
-  const env = { vars: XYZ, numbers: ctx.numbers, functions: ctx.functions };
+  const env = { vars: XYZ, numbers: ctx.numbers, functions: ctx.functions, points: ctx.points };
   return parts.map((s) => resolve(parse(s), env));
 };
 
@@ -210,17 +210,27 @@ const formSum: ObjectType = {
   bookRef: 'n.pforms',
   names: ['sum', 'sum1', 'sum2'],
   dims: [3],
-  params: () => [P.ref('phi', 'φ', ['form', 'function']), P.ref('psi', 'ψ (same degree)', ['form', 'function'])],
+  params: () => [
+    P.ref('phi', 'φ', ['form', 'function']),
+    P.select('op', 'Operation', [
+      { value: '+', label: 'φ + ψ' },
+      { value: '-', label: 'φ − ψ' },
+    ]),
+    P.ref('psi', 'ψ (same degree)', ['form', 'function']),
+  ],
   defaults: (_d, ctx) => {
     const fs = ctx.find(['form']);
-    return { phi: fs[1] ?? fs[0] ?? '', psi: fs[0] ?? '' };
+    return { phi: fs[1] ?? fs[0] ?? '', op: '+', psi: fs[0] ?? '' };
   },
-  compute: (p, ctx) => addForms(formOrFunction(ctx, p.phi), formOrFunction(ctx, p.psi)),
-  caption: (o, cx) => `${lbl(cx, o.params.phi)} + ${lbl(cx, o.params.psi)}`,
-  algebra: (o, v, cx) => formAlgebra(o, v, `${lbl(cx, o.params.phi)} + ${lbl(cx, o.params.psi)}`),
+  compute: (p, ctx) => {
+    const b = formOrFunction(ctx, p.psi);
+    return addForms(formOrFunction(ctx, p.phi), p.op === '-' ? negForm(b) : b);
+  },
+  caption: (o, cx) => `${lbl(cx, o.params.phi)} ${o.params.op === '-' ? '-' : '+'} ${lbl(cx, o.params.psi)}`,
+  algebra: (o, v, cx) => formAlgebra(o, v, `${lbl(cx, o.params.phi)} ${o.params.op === '-' ? '-' : '+'} ${lbl(cx, o.params.psi)}`),
   course: (o, v, cx) =>
     v.kind === 'form'
-      ? `Forms of the same degree are added coefficientwise: $\\sum f_i\\,dx_i + \\sum g_i\\,dx_i = \\sum (f_i + g_i)\\,dx_i$ (§1.6).\n\n$$${lbl(cx, o.params.phi)} + ${lbl(cx, o.params.psi)} = ${formTex(v)}$$`
+      ? `Forms of the same degree are added coefficientwise: $\\sum f_i\\,dx_i + \\sum g_i\\,dx_i = \\sum (f_i + g_i)\\,dx_i$ (§1.6).\n\n$$${lbl(cx, o.params.phi)} ${o.params.op === '-' ? '-' : '+'} ${lbl(cx, o.params.psi)} = ${formTex(v)}$$`
       : '',
   command: { name: 'FormSum', args: ['phi', 'psi'] },
 };
