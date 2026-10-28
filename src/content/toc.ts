@@ -4,9 +4,36 @@
 import type { Chapter, Entry, EntryKind, Section } from './types';
 
 export const CHAPTERS: Chapter[] = [
-  { chapter: 1, title: 'Calculus on Euclidean Space', page: 3 },
-  { chapter: 2, title: 'Frame Fields', page: 43 },
-  { chapter: 3, title: 'Euclidean Geometry', page: 100 },
+  {
+    chapter: 1,
+    title: 'Calculus on Euclidean Space',
+    page: 3,
+    intro:
+      'This first chapter sets up the language used throughout the book. Most of it is a review of the calculus of functions of three variables and of curves in space, ' +
+      'but the definitions are phrased so that they will carry over without change to surfaces later on: points and tangent vectors, vector fields and directional derivatives, ' +
+      'curves and their velocities, 1-forms and differential forms, and finally mappings between Euclidean spaces and their tangent maps.',
+  },
+  {
+    chapter: 2,
+    title: 'Frame Fields',
+    page: 43,
+    intro:
+      'Geometry begins with the measurement of distances and angles, and in Euclidean space both come from the dot product. ' +
+      'Most of the chapter is devoted to curves in $\\mathbf{R}^3$, studied by the *method of moving frames*: at each point of the curve one attaches a frame — three orthogonal unit vectors — ' +
+      'and expresses the rate of change of the frame in terms of the frame itself. For curves this gives the Frenet formulas, from which the whole theory of curves follows.\n\n' +
+      'The last sections apply the same idea to an arbitrary frame field on $\\mathbf{R}^3$: Cartan\'s connection equations and structural equations. ' +
+      'This is the tool that will later be used for surfaces.',
+  },
+  {
+    chapter: 3,
+    title: 'Euclidean Geometry',
+    page: 100,
+    intro:
+      'In plane geometry two triangles are congruent when a rigid motion carries one onto the other; congruent triangles then share every geometric property, ' +
+      'and congruence can be decided by simple tests, such as comparing the lengths of the sides. ' +
+      'This chapter studies the rigid motions — the isometries — of $\\mathbf{R}^3$ and extends these ideas to curves: ' +
+      'two unit-speed curves are congruent exactly when they have the same curvature and torsion (up to the sign of the torsion).',
+  },
 ];
 
 export const SECTIONS: Section[] = [

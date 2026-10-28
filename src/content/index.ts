@@ -27,6 +27,18 @@ export function entryLabel(id: string): string {
   return `${e.kind} ${e.id}`;
 }
 
+/** Book-style label: "Theorem 3.2" inside Chapter 2, "Theorem 3.2 of Chapter 2" elsewhere. */
+export function bookLabel(id: string, chapter: number): string {
+  const e = byId.get(id);
+  if (!e) return id;
+  if (e.kind === 'Notion') return e.title;
+  const [, s, n] = e.id.split('.');
+  return `${e.kind} ${s}.${n}` + (e.chapter === chapter ? '' : ` of Chapter ${e.chapter}`);
+}
+
+/** Number of an entry within its chapter, as printed in the book ("3.2"). */
+export const localNumber = (e: Entry): string => (e.id.startsWith('n.') ? '' : e.id.split('.').slice(1).join('.'));
+
 export function entriesOfSection(chapter: number, section: number): Entry[] {
   const order = (e: Entry) => (e.id.startsWith('n.') ? e.page * 100 + 50 : e.page * 100 + Number(e.id.split('.')[2]));
   return allEntries()

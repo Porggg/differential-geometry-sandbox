@@ -56,6 +56,8 @@ export interface Chapter {
   chapter: number;
   title: string;
   page: number;
+  /** Opening paragraphs of the chapter (Markdown). */
+  intro?: string;
 }
 
 export interface Builder {

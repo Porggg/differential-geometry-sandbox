@@ -1,11 +1,11 @@
-// Course view: the book. A table of contents, section pages, entry pages (statement, proof, notes,
-// live checks) — and full details of sandbox objects, including those that cannot be drawn.
+// Course view: the book. A title page and table of contents, chapter openings, and section pages
+// that read like a printed chapter (numbered results, proofs, commentary, figure plates) — plus the
+// full details of sandbox objects, including those that cannot be drawn.
 
-import { CHAPTERS, SECTIONS, allEntries, entriesOfSection, entryLabel, getEntry, hasContent } from '../content';
+import { CHAPTERS, SECTIONS, entriesOfSection, entryLabel, getEntry, hasContent, localNumber } from '../content';
 import type { Entry, EntryKind, Section } from '../content/types';
 import { getType } from '../core/registry';
 import type { Scene } from '../core/scene';
-import { fmt } from '../math/vec';
 import { ICONS } from './icons';
 import { escapeHtml, texToHtml } from './katex';
 import { renderMarkdown } from './markdown';
@@ -19,8 +19,11 @@ export type CoursePage =
 
 export interface CourseHost {
   scene: Scene;
+  /** Navigate to an entry (its section page) and load its figure. */
   openEntry(id: string): void;
   openSection(chapter: number, section: number): void;
+  /** Load an entry's figure without changing the page. */
+  showFigure(id: string): void;
   loadEntryScene(id: string, mode: 'replace' | 'add'): void;
   loadedEntry(): string | null;
   select(name: string | null): void;
@@ -29,17 +32,6 @@ export interface CourseHost {
   isMaximized(): boolean;
   pageChanged(page: CoursePage): void;
 }
-
-const KIND_ABBR: Record<EntryKind, string> = {
-  Definition: 'Def',
-  Theorem: 'Thm',
-  Lemma: 'Lem',
-  Corollary: 'Cor',
-  Proposition: 'Prop',
-  Example: 'Ex',
-  Remark: 'Rem',
-  Notion: 'Text',
-};
 
 const FILTERS: { label: string; kinds: EntryKind[] }[] = [
   { label: 'Theorems', kinds: ['Theorem', 'Proposition'] },
@@ -50,18 +42,34 @@ const FILTERS: { label: string; kinds: EntryKind[] }[] = [
   { label: 'Remarks', kinds: ['Remark'] },
 ];
 
-const order = (e: Entry) => (e.id.startsWith('n.') ? e.page * 100 + 50 : e.page * 100 + Number(e.id.split('.')[2]));
 const sectionOf = (ch: number, s: number): Section | undefined => SECTIONS.find((x) => x.chapter === ch && x.section === s);
+const chapterOf = (ch: number) => CHAPTERS.find((c) => c.chapter === ch)!;
+const sectionIndex = (ch: number, s: number) => SECTIONS.findIndex((x) => x.chapter === ch && x.section === s);
+
+/** Last page of a section in the book (the page before the next section starts). */
+function lastPage(s: Section): number {
+  const next = SECTIONS[sectionIndex(s.chapter, s.section) + 1];
+  if (next && next.chapter === s.chapter) return next.page - 1;
+  const nextCh = CHAPTERS.find((c) => c.chapter === s.chapter + 1);
+  return nextCh ? nextCh.page - 2 : s.page + 6;
+}
+
+/** Insert run-in HTML (a label) at the start of the first paragraph of rendered Markdown. */
+function runIn(html: string, label: string): string {
+  if (html.startsWith('<p>')) return `<p>${label} ${html.slice(3)}`;
+  return `<p class="run-in-alone">${label}</p>${html}`;
+}
 
 export class CoursePanel {
   readonly el: HTMLElement;
   private body: HTMLElement;
   private history: CoursePage[] = [{ kind: 'contents' }];
   private pos = 0;
+  /** Section currently rendered (to avoid re-rendering when jumping within it). */
+  private rendered: string | null = null;
   // table-of-contents state (kept between visits)
   private query = '';
   private active = new Set<string>(FILTERS.map((f) => f.label));
-  private onlyWritten = false;
   private collapsed = new Set<number>();
   private tocScroll = 0;
 
@@ -72,16 +80,22 @@ export class CoursePanel {
       <div class="panel-head course-head">
         <button class="icon-btn sm" data-nav="back" title="Back">${ICONS.back}</button>
         <button class="icon-btn sm" data-nav="fwd" title="Forward">${ICONS.forward}</button>
-        <button class="btn sm toc-btn" data-nav="contents" title="Table of contents of the book">${ICONS.contents} Contents</button>
+        <button class="btn sm toc-btn" data-nav="contents" title="Table of contents">${ICONS.contents} Contents</button>
         <span class="crumb"></span>
-        <button class="icon-btn sm" data-nav="max" title="Enlarge / restore the Course view">${ICONS.expand}</button>
+        <button class="icon-btn sm" data-nav="prev" title="Previous section (←)">${ICONS.back}</button>
+        <span class="page-ind"></span>
+        <button class="icon-btn sm" data-nav="next" title="Next section (→)">${ICONS.forward}</button>
+        <button class="icon-btn sm" data-nav="max" title="Full-width reading / show the figure">${ICONS.expand}</button>
       </div>
       <div class="course-body"></div>`;
     this.body = this.el.querySelector('.course-body')!;
-    this.el.querySelector('[data-nav=back]')!.addEventListener('click', () => this.go(-1));
-    this.el.querySelector('[data-nav=fwd]')!.addEventListener('click', () => this.go(1));
-    this.el.querySelector('[data-nav=contents]')!.addEventListener('click', () => this.show({ kind: 'contents' }));
-    this.el.querySelector('[data-nav=max]')!.addEventListener('click', () => this.host.toggleMaximize());
+    const nav = (k: string, f: () => void) => this.el.querySelector(`[data-nav=${k}]`)!.addEventListener('click', f);
+    nav('back', () => this.go(-1));
+    nav('fwd', () => this.go(1));
+    nav('contents', () => this.show({ kind: 'contents' }));
+    nav('prev', () => this.turnPage(-1));
+    nav('next', () => this.turnPage(1));
+    nav('max', () => this.host.toggleMaximize());
     this.el.querySelector('.crumb')!.addEventListener('click', (e) => this.onClick(e as MouseEvent));
     this.body.addEventListener('click', (e) => this.onClick(e));
     this.render();
@@ -100,8 +114,7 @@ export class CoursePanel {
       if (this.history.length > 100) this.history.shift();
       this.pos = this.history.length - 1;
     }
-    this.render();
-    this.body.scrollTop = page.kind === 'contents' ? this.tocScroll : 0;
+    this.render(true);
   }
 
   private go(d: number): void {
@@ -109,8 +122,30 @@ export class CoursePanel {
     if (p < 0 || p >= this.history.length) return;
     if (this.page.kind === 'contents') this.tocScroll = this.body.scrollTop;
     this.pos = p;
-    this.render();
-    if (this.page.kind === 'contents') this.body.scrollTop = this.tocScroll;
+    this.render(true);
+  }
+
+  /** The section the current page belongs to, if any. */
+  private currentSection(): Section | undefined {
+    const p = this.page;
+    if (p.kind === 'section') return sectionOf(p.chapter, p.section);
+    if (p.kind === 'entry') {
+      const e = getEntry(p.id);
+      return e ? sectionOf(e.chapter, e.section) : undefined;
+    }
+    return undefined;
+  }
+
+  /** Previous / next section, like turning pages. From the contents, "next" opens §1.1. */
+  turnPage(d: number): void {
+    const s = this.currentSection();
+    if (!s) {
+      if (d > 0) this.host.openSection(SECTIONS[0].chapter, SECTIONS[0].section);
+      return;
+    }
+    const t = SECTIONS[sectionIndex(s.chapter, s.section) + d];
+    if (t) this.host.openSection(t.chapter, t.section);
+    else if (d < 0) this.show({ kind: 'contents' });
   }
 
   /** Live update after scene changes. */
@@ -124,16 +159,8 @@ export class CoursePanel {
         this.render();
         this.body.scrollTop = top;
       }
-    } else if (page.kind === 'entry') {
-      if (names === 'all') {
-        const top = this.body.scrollTop;
-        this.render();
-        this.body.scrollTop = top;
-        return;
-      }
-      const box = this.body.querySelector('.checks-body');
-      const e = getEntry(page.id);
-      if (box && e?.checks) box.innerHTML = this.checksHtml(e);
+    } else if (page.kind === 'entry' || page.kind === 'section') {
+      this.updateFigureMarkers();
     }
   }
 
@@ -141,69 +168,90 @@ export class CoursePanel {
     (this.el.querySelector('[data-nav=max]') as HTMLElement).innerHTML = this.host.isMaximized() ? ICONS.shrink : ICONS.expand;
   }
 
-  private render(): void {
+  private render(navigated = false): void {
     const page = this.page;
     (this.el.querySelector('[data-nav=back]') as HTMLButtonElement).disabled = this.pos === 0;
     (this.el.querySelector('[data-nav=fwd]') as HTMLButtonElement).disabled = this.pos >= this.history.length - 1;
     this.el.querySelector('[data-nav=contents]')!.classList.toggle('on', page.kind === 'contents');
-    const crumb = this.el.querySelector('.crumb') as HTMLElement;
-    crumb.innerHTML = this.crumbHtml(page);
+    const sec = this.currentSection();
+    (this.el.querySelector('.crumb') as HTMLElement).innerHTML = this.crumbHtml(page);
+    (this.el.querySelector('.page-ind') as HTMLElement).textContent = sec ? `pp. ${sec.page}–${lastPage(sec)}` : '';
+    (this.el.querySelector('[data-nav=prev]') as HTMLButtonElement).disabled = !sec;
+    const key = sec ? `${sec.chapter}.${sec.section}` : null;
     switch (page.kind) {
       case 'contents':
+        this.rendered = null;
         this.body.innerHTML = this.contentsHtml();
         this.bindContents();
+        if (navigated) this.body.scrollTop = this.tocScroll;
         break;
       case 'help':
+        this.rendered = null;
         this.body.innerHTML = this.helpHtml();
+        if (navigated) this.body.scrollTop = 0;
+        break;
+      case 'object':
+        this.rendered = null;
+        this.body.innerHTML = this.objectHtml(page.name);
+        if (navigated) this.body.scrollTop = 0;
         break;
       case 'section':
-        this.body.innerHTML = this.sectionHtml(page.chapter, page.section);
-        break;
       case 'entry': {
-        const e = getEntry(page.id);
-        this.body.innerHTML = e ? this.entryHtml(e) : `<p class="pad">Unknown entry ${escapeHtml(page.id)}.</p>`;
+        if (!sec) {
+          this.body.innerHTML = '<p class="pad">Unknown page.</p>';
+          break;
+        }
+        if (this.rendered !== key) {
+          this.body.innerHTML = this.sectionHtml(sec);
+          this.rendered = key;
+          if (page.kind === 'section' && navigated) this.body.scrollTop = 0;
+        } else this.updateFigureMarkers();
+        if (page.kind === 'entry' && navigated) this.scrollToEntry(page.id);
         break;
       }
-      case 'object':
-        this.body.innerHTML = this.objectHtml(page.name);
-        break;
     }
     this.updateMaxButton();
     this.host.pageChanged(page);
   }
 
+  private scrollToEntry(id: string): void {
+    const el = this.body.querySelector(`[data-anchor="${CSS.escape(id)}"]`) as HTMLElement | null;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top - this.body.getBoundingClientRect().top + this.body.scrollTop - 14;
+    this.body.scrollTo({ top, behavior: 'auto' });
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+
   private crumbHtml(page: CoursePage): string {
-    const secLink = (ch: number, s: number) => {
-      const sec = sectionOf(ch, s);
-      return sec ? `<a href="#" data-section="${ch}.${s}">§${ch}.${s} ${escapeHtml(sec.title)}</a>` : '';
-    };
-    if (page.kind === 'section') return `<span>Chapter ${page.chapter}</span>`;
-    if (page.kind === 'entry') {
-      const e = getEntry(page.id);
-      return e ? secLink(e.chapter, e.section) : '';
-    }
-    if (page.kind === 'object') return '<span>Object</span>';
+    if (page.kind === 'object') return '<span>Object of the construction</span>';
     if (page.kind === 'help') return '<span>How to use</span>';
-    return '';
+    const s = this.currentSection();
+    if (!s) return '';
+    return `<a href="#" data-section="${s.chapter}.1">Ch. ${s.chapter}</a> · <a href="#" data-section="${s.chapter}.${s.section}">§${s.chapter}.${s.section} ${escapeHtml(s.title)}</a>`;
   }
 
   // -------------------------------------------------------------------------------------------
-  // Table of contents
+  // Title page and table of contents
 
   private contentsHtml(): string {
-    const written = allEntries().filter(hasContent).length;
     return `
-      <article class="entry book-toc">
-        <header class="book-cover">
-          <div class="book-title">Elementary Differential Geometry</div>
-          <div class="book-sub">B. O'Neill · revised 2nd edition · Chapters 1–3 — interactive companion</div>
-          <div class="book-meta">${written} of ${allEntries().length} entries written · <a href="#" data-help="1">How to use the sandbox</a></div>
+      <article class="book-page toc-page">
+        <header class="title-page">
+          <div class="tp-rule"></div>
+          <div class="tp-title">Elementary Differential Geometry</div>
+          <div class="tp-author">Barrett O'Neill</div>
+          <div class="tp-edition">Revised Second Edition · Chapters 1–3</div>
+          <div class="tp-rule"></div>
+          <div class="tp-sub">An interactive companion: every definition, theorem and example, with its proof and a live figure.
+            <a href="#" data-help="1">How to read this book</a></div>
         </header>
+        <h2 class="toc-head">Contents</h2>
         <div class="toc-tools">
-          <input type="search" class="toc-search" placeholder="Search: Frenet, 2.3.2, isometry…" value="${escapeHtml(this.query)}">
+          <input type="search" class="toc-search" placeholder="Find a result: Frenet, 2.3.2, isometry…" value="${escapeHtml(this.query)}">
           <div class="toc-filters">
             ${FILTERS.map((f) => `<button class="chip ${this.active.has(f.label) ? 'on' : ''}" data-filter="${f.label}">${f.label}</button>`).join('')}
-            <button class="chip ${this.onlyWritten ? 'on' : ''}" data-written="1" title="Only entries whose content is already written">Written</button>
           </div>
         </div>
         <div class="toc-list">${this.tocListHtml()}</div>
@@ -212,44 +260,41 @@ export class CoursePanel {
 
   private tocListHtml(): string {
     const q = this.query.toLowerCase().trim();
-    const body: string[] = [];
+    const loaded = this.host.loadedEntry();
+    const out: string[] = [];
     for (const ch of CHAPTERS) {
-      const secHtml: string[] = [];
+      const secs: string[] = [];
       for (const s of SECTIONS.filter((x) => x.chapter === ch.chapter)) {
         const items = entriesOfSection(s.chapter, s.section).filter((e) => {
           const f = FILTERS.find((x) => x.kinds.includes(e.kind));
           if (f && !this.active.has(f.label)) return false;
-          if (this.onlyWritten && !hasContent(e)) return false;
           if (q && !`${e.id} ${e.kind} ${e.title} ${e.bookName ?? ''} ${s.title}`.toLowerCase().includes(q)) return false;
           return true;
         });
-        if (!items.length && (q || this.onlyWritten)) continue;
-        secHtml.push(`
-          <div class="toc-section">
-            <a href="#" class="toc-sec-title" data-section="${s.chapter}.${s.section}"><span class="sec-num">${s.chapter}.${s.section}</span> ${escapeHtml(s.title)}<span class="pg">${s.page}</span></a>
-            <div class="toc-items">${items.map((e) => this.tocItem(e)).join('')}</div>
+        if (!items.length && q) continue;
+        secs.push(`
+          <div class="toc-sec">
+            <a href="#" class="toc-line sec" data-section="${s.chapter}.${s.section}"><span class="n">${s.chapter}.${s.section}</span><span class="t">${escapeHtml(s.title)}</span><span class="dots"></span><span class="pg">${s.page}</span></a>
+            <div class="toc-items">${items
+              .map(
+                (e) => `<a href="#" class="toc-line item ${e.id === loaded ? 'current' : ''}" data-entry="${e.id}">
+                  <span class="n">${localNumber(e)}</span><span class="t"><span class="k">${e.kind === 'Notion' ? '' : e.kind}</span> ${escapeHtml(e.title)}</span><span class="dots"></span><span class="pg">${e.page}</span></a>`,
+              )
+              .join('')}</div>
           </div>`);
       }
-      if (!secHtml.length) continue;
+      if (!secs.length) continue;
       const closed = this.collapsed.has(ch.chapter) && !q;
-      body.push(`
+      out.push(`
         <div class="toc-chapter ${closed ? 'closed' : ''}">
-          <button class="toc-ch-title" data-chapter="${ch.chapter}"><span class="caret"></span>Chapter ${ch.chapter} · ${escapeHtml(ch.title)}<span class="pg">${ch.page}</span></button>
-          <div class="toc-ch-body">${secHtml.join('')}</div>
+          <div class="toc-line chap">
+            <button class="toc-fold" data-chapter="${ch.chapter}" title="Show / hide the results"><span class="caret"></span></button>
+            <a href="#" data-section="${ch.chapter}.1"><span class="n">Chapter ${ch.chapter}</span><span class="t">${escapeHtml(ch.title)}</span></a><span class="dots"></span><span class="pg">${ch.page}</span>
+          </div>
+          <div class="toc-ch-body">${secs.join('')}</div>
         </div>`);
     }
-    return body.join('') || '<p class="muted pad">No match.</p>';
-  }
-
-  private tocItem(e: Entry): string {
-    const loaded = this.host.loadedEntry() === e.id;
-    return `
-      <a href="#" class="toc-item ${hasContent(e) ? '' : 'todo'} ${loaded ? 'current' : ''}" data-entry="${e.id}" title="${escapeHtml(`${e.kind} ${e.id.startsWith('n.') ? '' : e.id} — p. ${e.page}${hasContent(e) ? '' : ' (not written yet)'}`)}">
-        <span class="kind k-${e.kind.toLowerCase()}">${KIND_ABBR[e.kind]}</span>
-        <span class="num">${e.id.startsWith('n.') ? '' : e.id}</span>
-        <span class="ttl">${escapeHtml(e.title)}</span>
-        <span class="pg">${e.page}</span>
-      </a>`;
+    return out.join('') || '<p class="muted">No match.</p>';
   }
 
   private bindContents(): void {
@@ -268,142 +313,119 @@ export class CoursePanel {
         list.innerHTML = this.tocListHtml();
       }),
     );
-    this.body.querySelector('[data-written]')?.addEventListener('click', (e) => {
-      this.onlyWritten = !this.onlyWritten;
-      (e.currentTarget as HTMLElement).classList.toggle('on');
-      list.innerHTML = this.tocListHtml();
-    });
   }
 
   // -------------------------------------------------------------------------------------------
-  // Section page: every entry of the section, in the book's order
+  // A section page, typeset as in the book
 
-  private sectionHtml(chapter: number, section: number): string {
-    const s = sectionOf(chapter, section);
-    if (!s) return '<p class="pad">Unknown section.</p>';
-    const entries = entriesOfSection(chapter, section);
-    const next = SECTIONS.find((x) => x.page > s.page);
-    const prev = [...SECTIONS].reverse().find((x) => x.page < s.page);
-    const end = next ? next.page - 1 : s.page;
-    const cards = entries.map((e) => {
-      const head = `
-        <div class="sec-entry-head">
-          <span class="kind k-${e.kind.toLowerCase()}">${KIND_ABBR[e.kind]}</span>
-          <a href="#" data-entry="${e.id}" class="sec-entry-title">${e.id.startsWith('n.') ? '' : `<span class="num">${e.id}</span> `}${escapeHtml(e.title)}</a>
-          <span class="pg">p. ${e.page}</span>
-        </div>`;
-      if (!hasContent(e)) return `<div class="sec-entry todo">${head}<p class="muted">Not written yet — book p. ${e.page}.</p></div>`;
-      return `
-        <div class="sec-entry">
-          ${head}
-          <div class="statement kind-${e.kind.toLowerCase()}">${renderMarkdown(e.statement ?? '')}</div>
-          <a href="#" class="btn sm" data-entry="${e.id}">Open — ${[e.proof ? (e.kind === 'Example' ? 'computation' : 'proof') : '', e.scene ? 'figure' : '', 'explanation'].filter(Boolean).join(', ')} →</a>
-        </div>`;
-    });
-    const link = (x: Section | undefined, dir: 'prev' | 'next') =>
-      x ? `<a href="#" class="xref nav-${dir}" data-section="${x.chapter}.${x.section}">${dir === 'prev' ? '← ' : ''}§${x.chapter}.${x.section} ${escapeHtml(x.title)}${dir === 'next' ? ' →' : ''}</a>` : '<span></span>';
+  private sectionHtml(s: Section): string {
+    const ch = chapterOf(s.chapter);
+    const md = (src: string) => renderMarkdown(src, { chapter: s.chapter });
+    const opener =
+      s.section === 1
+        ? `<header class="ch-open">
+            <div class="ch-ornament"><span></span><i class="up"></i><span></span></div>
+            <div class="ch-num">Chapter ${ch.chapter}</div>
+            <div class="ch-title">${escapeHtml(ch.title)}</div>
+            <div class="ch-ornament"><span></span><i class="down"></i><span></span></div>
+            ${ch.intro ? `<div class="ch-intro">${md(ch.intro)}</div>` : ''}
+          </header>`
+        : '';
+    const entries = entriesOfSection(s.chapter, s.section)
+      .map((e) => this.entryHtml(e, md))
+      .join('');
+    const idx = sectionIndex(s.chapter, s.section);
+    const prev = SECTIONS[idx - 1];
+    const next = SECTIONS[idx + 1];
+    const turn = (x: Section | undefined, dir: 'prev' | 'next') =>
+      x
+        ? `<a href="#" class="turn ${dir}" data-section="${x.chapter}.${x.section}"><span class="turn-dir">${dir === 'prev' ? '← Previous' : 'Next →'}</span><span class="turn-t">${x.chapter}.${x.section} ${escapeHtml(x.title)}</span></a>`
+        : `<a href="#" class="turn ${dir}" data-contents="1"><span class="turn-dir">${dir === 'prev' ? '← Contents' : ''}</span></a>`;
     return `
-      <article class="entry section-page">
-        <header class="entry-head">
-          <span class="badge">Section</span>
-          <h2><span class="num">${s.chapter}.${s.section}</span> ${escapeHtml(s.title)}</h2>
-          <span class="book-page">${ICONS.book} pp. ${s.page}–${end}</span>
-        </header>
-        ${cards.join('')}
-        <nav class="entry-nav">${link(prev, 'prev')}${link(next, 'next')}</nav>
+      <article class="book-page">
+        <div class="run-head"><span>${ch.chapter}. ${escapeHtml(ch.title)}</span><span>${s.chapter}.${s.section} ${escapeHtml(s.title)}</span></div>
+        ${opener}
+        <h2 class="sec-title"><span class="sec-num">${s.chapter}.${s.section}</span>${escapeHtml(s.title)}</h2>
+        ${entries}
+        <footer class="page-foot">
+          <div class="folio">pp. ${s.page}–${lastPage(s)} in the book</div>
+          <nav class="turns">${turn(prev, 'prev')}${turn(next, 'next')}</nav>
+        </footer>
       </article>`;
+  }
+
+  private entryHtml(e: Entry, md: (s: string) => string): string {
+    const loaded = this.host.loadedEntry() === e.id;
+    const kind = e.kind.toLowerCase();
+    const margin = `<a href="#" class="bk-pg" data-entry-page="${e.id}" title="Page in O'Neill (revised 2nd ed.)">p. ${e.page}</a>`;
+    if (!hasContent(e)) {
+      return `<section class="bk-entry kind-${kind}" data-anchor="${e.id}">${margin}<p><span class="bk-lbl">${localNumber(e)} ${e.kind}</span> <span class="muted">${escapeHtml(e.title)} — see the book, p. ${e.page}.</span></p></section>`;
+    }
+    let stmt = md(e.statement ?? '');
+    if (e.kind === 'Notion') stmt = `<h4 class="bk-notion">${escapeHtml(e.title)}</h4>${stmt}`;
+    else stmt = runIn(stmt, `<span class="bk-lbl">${localNumber(e)} ${e.kind}</span>${e.bookName ? ` <span class="bk-name">(${escapeHtml(e.bookName)}).</span>` : ''}`);
+    let proof = '';
+    if (e.proof) {
+      const body = md(e.proof);
+      proof = `<div class="bk-proof">${e.kind === 'Example' ? body : runIn(body, '<span class="bk-proof-lbl">Proof.</span>')}</div>`;
+    }
+    const fig = e.scene
+      ? `<figure class="bk-fig ${loaded ? 'loaded' : ''}" data-fig="${e.id}">
+          <div class="bk-fig-icon">${e.scene.views.includes('3d') ? ICONS.view3d : ICONS.view2d}</div>
+          <figcaption>
+            <span class="bk-fig-n">Figure ${localNumber(e) || e.title}</span>
+            <span class="bk-fig-t">${e.scene.views.length ? `Interactive ${e.scene.views.map((v) => v.toUpperCase()).join(' + ')} figure` : 'Computation without picture'} — ${loaded ? 'shown beside the text' : 'click to show it beside the text'}.</span>
+          </figcaption>
+        </figure>`
+      : '';
+    const tryThis = e.tryThis?.length
+      ? `<aside class="bk-try"><div class="bk-try-h">${ICONS.view3d} Try it in the figure</div><ul>${e.tryThis.map((t) => `<li>${md(t).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></aside>`
+      : '';
+    return `
+      <section class="bk-entry kind-${kind} ${loaded ? 'loaded' : ''}" data-anchor="${e.id}">
+        ${margin}
+        <div class="bk-stmt">${stmt}</div>
+        ${proof}
+        ${fig}
+        ${e.notes ? `<div class="bk-notes">${md(e.notes)}</div>` : ''}
+        ${tryThis}
+      </section>`;
+  }
+
+  /** Reflect which entry's figure is loaded without re-rendering the page. */
+  private updateFigureMarkers(): void {
+    const loaded = this.host.loadedEntry();
+    this.body.querySelectorAll<HTMLElement>('.bk-entry').forEach((el) => el.classList.toggle('loaded', el.dataset.anchor === loaded));
+    this.body.querySelectorAll<HTMLElement>('.bk-fig').forEach((el) => {
+      const on = el.dataset.fig === loaded;
+      el.classList.toggle('loaded', on);
+      const t = el.querySelector('.bk-fig-t');
+      if (t) t.textContent = t.textContent!.replace(/— .*$/, on ? '— shown beside the text.' : '— click to show it beside the text.');
+    });
   }
 
   // -------------------------------------------------------------------------------------------
 
   private helpHtml(): string {
     return `
-      <article class="entry home">
-        <h2>How to use the sandbox</h2>
+      <article class="book-page help-page">
+        <h2 class="sec-title">How to read this book</h2>
+        <p><b>Book mode</b> (the default) is for reading: the text on the left, typeset like the printed book, and the figure of the result you are reading on the right.</p>
         <ul>
-          <li><b>Course</b> (this panel) is the book: <b>Contents</b> lists every definition, theorem, lemma, corollary, example and remark of Chapters 1–3. Clicking an entry loads its figure and shows its statement, proof and explanation; clicking a section shows the whole section. ⤢ enlarges the panel for reading.</li>
-          <li><b>Toolbar</b>: create objects (points, tangent vectors, curves, Frenet frames, forms, mappings, frames, isometries…). New objects go to the active graphics view (2D or 3D — click a view to activate it).</li>
-          <li><b>Algebra</b>: every object with its definition, grouped by view (R³, R², numbers, objects that are not drawn). Click to select (its details appear here), double-click or ✎ to edit, click the colored dot to show/hide.</li>
-          <li><b>Sliders</b>: drag them, or type a value in the box; ▶ animates, ×1 changes the speed; grabbing the slider pauses the animation.</li>
-          <li><b>Command bar</b> (bottom, can be hidden): type definitions such as <code>alpha(t) = (cos(t), sin(t), t)</code>, <code>V = x*y*U1 - z*U3</code>, <code>phi = x^2 dx - y dz</code>, <code>Frenet(alpha, 1)</code>.</li>
+          <li><b>Contents</b> lists the chapters, sections and every numbered result with its page in O'Neill. Click a section to read it, or a result to jump to it.</li>
+          <li>Each result has a <b>figure plate</b> under its statement or proof: click it to show that figure beside the text. The figure is live — drag it, use its sliders — and the <b>live checks</b> under it recompute the result on the figure.</li>
+          <li>Turn pages with the arrows at the bottom of a section, the ‹ › buttons at the top, or the ← → keys. ⤢ hides the figure for full-width reading.</li>
+          <li>Cross references are written as in the book: “Theorem 3.2” in the same chapter, “Lemma 4.5 of Chapter 1” otherwise. Click them.</li>
         </ul>
-        <h3>Mouse</h3>
+        <p><b>Sandbox mode</b> adds the construction tools: the toolbar, the Algebra view (all objects of the figure, editable), the command bar, and the details of any object in this panel. Use “Explore in the sandbox” above a figure to switch with that figure loaded.</p>
+        <h3>Mouse and keyboard</h3>
         <ul>
-          <li>3D: drag to rotate, right-drag to pan, wheel to zoom.</li>
-          <li>2D: drag to pan, wheel to zoom (Shift: vertical axis only, Alt: horizontal only).</li>
-          <li>With the <b>Move</b> tool: drag a free point (3D: Shift for vertical motion); drag a point α(t₀), a velocity or a Frenet frame <b>along its curve</b> — the parameter (or its slider) follows.</li>
-          <li>Keyboard: <code>Ctrl/⌘ Z</code> undo, <code>Ctrl/⌘ Shift Z</code> redo, <code>Delete</code> deletes the selection, <code>Esc</code> returns to the Move tool.</li>
+          <li>3D: drag to rotate, right-drag to pan, wheel to zoom. 2D: drag to pan, wheel to zoom (Shift: vertical axis only).</li>
+          <li>With the Move tool (sandbox mode): drag free points, and drag α(t₀), velocities or Frenet frames along their curve.</li>
+          <li><code>Ctrl/⌘ Z</code> undo, <code>Ctrl/⌘ Shift Z</code> redo, <code>Esc</code> back to the Move tool.</li>
         </ul>
         <p><a href="#" data-contents="1">← Back to the contents</a></p>
       </article>`;
-  }
-
-  private entryHtml(e: Entry): string {
-    const head = `
-      <header class="entry-head">
-        <span class="badge k-${e.kind.toLowerCase()}">${e.kind === 'Notion' ? 'In the text' : e.kind}</span>
-        <h2>${e.id.startsWith('n.') ? '' : `<span class="num">${e.id}</span> `}${escapeHtml(e.title)}</h2>
-        <span class="book-page" title="Page in O'Neill, Elementary Differential Geometry, revised 2nd ed.">${ICONS.book} p. ${e.page}</span>
-      </header>`;
-    const nav = this.prevNext(e);
-    if (!hasContent(e)) {
-      return `<article class="entry">${head}
-        <div class="todo-box">This entry is not written yet — it will come in a later delivery.<br>Meanwhile, read it in the book, <b>page ${e.page}</b>, and experiment with the toolbar.</div>
-        ${nav}</article>`;
-    }
-    const loaded = this.host.loadedEntry() === e.id;
-    const actions = e.scene
-      ? `<div class="entry-actions">
-          <button class="btn ${loaded ? '' : 'primary'}" data-load="replace">${ICONS.load} ${loaded ? 'Reload figure' : 'Load figure'}</button>
-          <button class="btn" data-load="add" title="Add the objects of this entry to the current construction">${ICONS.plus} Add to scene</button>
-        </div>`
-      : '';
-    const kindWord = e.kind === 'Notion' ? 'Definitions' : e.kind;
-    return `
-      <article class="entry">
-        ${head}
-        ${actions}
-        <section class="statement kind-${e.kind.toLowerCase()}">
-          <div class="statement-label">${kindWord}${e.bookName ? ` <span class="muted">(${escapeHtml(e.bookName)})</span>` : ''}</div>
-          ${renderMarkdown(e.statement ?? '')}
-        </section>
-        ${e.proof ? `<section class="proof"><h3>${e.kind === 'Example' ? 'Computation' : 'Proof'}</h3>${renderMarkdown(e.proof)}</section>` : ''}
-        ${e.notes ? `<section class="notes"><h3>Explanation</h3>${renderMarkdown(e.notes)}</section>` : ''}
-        ${e.tryThis?.length ? `<section class="try"><h3>Try this</h3><ul>${e.tryThis.map((t) => `<li>${renderMarkdown(t).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></section>` : ''}
-        ${e.checks?.length ? `<section class="checks"><h3>Live check <span class="muted">(${loaded ? 'updates as you change the figure' : 'load the figure to run it'})</span></h3><div class="checks-body">${loaded ? this.checksHtml(e) : ''}</div></section>` : ''}
-        ${nav}
-      </article>`;
-  }
-
-  private checksHtml(e: Entry): string {
-    if (this.host.loadedEntry() !== e.id) return '<p class="muted">Load the figure to run the check.</p>';
-    const rows = (e.checks ?? []).map((c) => {
-      let ok = false;
-      let txt: string;
-      try {
-        const val = c.value(this.host.scene);
-        ok = Math.abs(val - (c.expect ?? 0)) <= (c.tol ?? 1e-5);
-        txt = fmt(val, 8);
-      } catch (err) {
-        txt = `undefined (${escapeHtml((err as Error).message)})`;
-      }
-      return `<tr class="${ok ? 'ok' : 'bad'}"><td>${texToHtml(c.label)}</td><td class="val">${txt}${c.expect !== undefined ? ` <span class="muted">(expected ${c.expect})</span>` : ''}</td><td class="mark">${ok ? '✓' : '✗'}</td></tr>`;
-    });
-    return `<table class="checks-table">${rows.join('')}</table>`;
-  }
-
-  private prevNext(e: Entry): string {
-    const list = allEntries()
-      .slice()
-      .sort((a, b) => a.chapter - b.chapter || a.section - b.section || order(a) - order(b));
-    const i = list.findIndex((x) => x.id === e.id);
-    const prev = list[i - 1];
-    const next = list[i + 1];
-    const link = (x: Entry | undefined, dir: string) =>
-      x
-        ? `<a href="#" class="xref nav-${dir}" data-entry="${x.id}">${dir === 'prev' ? '← ' : ''}${escapeHtml(entryLabel(x.id))}${x.id.startsWith('n.') ? '' : ` · ${escapeHtml(x.title)}`}${dir === 'next' ? ' →' : ''}</a>`
-        : '<span></span>';
-    return `<nav class="entry-nav">${link(prev, 'prev')}${link(next, 'next')}</nav>`;
   }
 
   private objectHtml(name: string): string {
@@ -454,11 +476,18 @@ export class CoursePanel {
   }
 
   private onClick(e: MouseEvent): void {
+    const fig = (e.target as HTMLElement).closest('.bk-fig') as HTMLElement | null;
+    if (fig?.dataset.fig) {
+      this.host.showFigure(fig.dataset.fig);
+      return;
+    }
     const a = (e.target as HTMLElement).closest('a, button') as HTMLElement | null;
     if (!a) return;
     if (a.dataset.entry) {
       e.preventDefault();
       this.host.openEntry(a.dataset.entry);
+    } else if (a.dataset.entryPage) {
+      e.preventDefault();
     } else if (a.dataset.section) {
       e.preventDefault();
       const [c, s] = a.dataset.section.split('.').map(Number);
@@ -467,14 +496,11 @@ export class CoursePanel {
       const c = Number(a.dataset.chapter);
       if (this.collapsed.has(c)) this.collapsed.delete(c);
       else this.collapsed.add(c);
-      a.parentElement!.classList.toggle('closed');
+      a.closest('.toc-chapter')!.classList.toggle('closed');
     } else if (a.dataset.obj) {
       e.preventDefault();
       this.host.select(a.dataset.obj);
       this.show({ kind: 'object', name: a.dataset.obj });
-    } else if (a.dataset.load) {
-      const p = this.page;
-      if (p.kind === 'entry') this.host.loadEntryScene(p.id, a.dataset.load as 'replace' | 'add');
     } else if (a.dataset.edit) {
       this.host.editObject(a.dataset.edit);
     } else if (a.dataset.help) {
@@ -486,3 +512,4 @@ export class CoursePanel {
     }
   }
 }
+

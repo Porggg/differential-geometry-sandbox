@@ -14,6 +14,7 @@ import { View2D } from './render/view2d';
 import { View3D } from './render/view3d';
 import { AlgebraPanel } from './ui/algebra';
 import { CoursePanel, type CoursePage } from './ui/course';
+import { FigureCaption } from './ui/figure';
 import { buildForm } from './ui/form';
 import { ICONS } from './ui/icons';
 import { escapeHtml, texToHtml } from './ui/katex';
@@ -22,6 +23,10 @@ import { Toolbar } from './ui/toolbar';
 type PanelId = 'algebra' | 'v2d' | 'v3d' | 'course' | 'cmd';
 
 interface Layout {
+  /** Book: the course is the main page, the figure beside it. Sandbox: construction tools. */
+  mode: 'book' | 'sandbox';
+  /** Width of the figure panel in book mode, as a fraction of the window. */
+  figFrac: number;
   algebra: boolean;
   v2d: boolean;
   v3d: boolean;
@@ -73,12 +78,15 @@ export class App implements ViewHost {
   private toolbar!: Toolbar;
   private algebra!: AlgebraPanel;
   private course!: CoursePanel;
+  private figure!: FigureCaption;
 
   constructor(root: HTMLElement) {
     this.root = root;
     const narrow = window.innerWidth < 900;
     const saved = safeParse<Layout>(store.get('dgs.layout'));
     this.layout = {
+      mode: 'book',
+      figFrac: 0.4,
       algebra: true,
       v2d: false,
       v3d: true,
@@ -109,16 +117,22 @@ export class App implements ViewHost {
         <div class="brand" title="Differential Geometry Sandbox — O'Neill, Chapters 1–3">
           <span class="logo">∂</span><span class="brand-name">DG Sandbox</span>
         </div>
-        <div class="toolbar-slot"></div>
+        <div class="mode-switch" role="tablist" aria-label="Mode">
+          <button data-mode="book" role="tab" title="Read the course, with the figure beside the text">${ICONS.book}<span>Book</span></button>
+          <button data-mode="sandbox" role="tab" title="Construction tools: toolbar, Algebra view, command bar">${ICONS.view3d}<span>Sandbox</span></button>
+        </div>
+        <div class="toolbar-slot sandbox-only"></div>
         <div class="top-actions">
-          <button class="icon-btn" data-act="undo" title="Undo (Ctrl/⌘ Z)">${ICONS.undo}</button>
-          <button class="icon-btn" data-act="redo" title="Redo (Ctrl/⌘ Shift Z)">${ICONS.redo}</button>
-          <span class="sep"></span>
-          <button class="toggle-btn" data-panel="algebra" title="Algebra view">${ICONS.algebra}<span>Algebra</span></button>
-          <button class="toggle-btn" data-panel="v2d" title="2D graphics view">${ICONS.view2d}<span>2D</span></button>
-          <button class="toggle-btn" data-panel="v3d" title="3D graphics view">${ICONS.view3d}<span>3D</span></button>
-          <button class="toggle-btn" data-panel="course" title="Course view">${ICONS.course}<span>Course</span></button>
-          <button class="toggle-btn" data-panel="cmd" title="Command bar">${ICONS.command}<span>Input</span></button>
+          <button class="icon-btn sandbox-only" data-act="undo" title="Undo (Ctrl/⌘ Z)">${ICONS.undo}</button>
+          <button class="icon-btn sandbox-only" data-act="redo" title="Redo (Ctrl/⌘ Shift Z)">${ICONS.redo}</button>
+          <span class="sep sandbox-only"></span>
+          <button class="toggle-btn sandbox-only" data-panel="algebra" title="Algebra view">${ICONS.algebra}<span>Algebra</span></button>
+          <button class="toggle-btn sandbox-only" data-panel="v2d" title="2D graphics view">${ICONS.view2d}<span>2D</span></button>
+          <button class="toggle-btn sandbox-only" data-panel="v3d" title="3D graphics view">${ICONS.view3d}<span>3D</span></button>
+          <button class="toggle-btn sandbox-only" data-panel="course" title="Course view">${ICONS.course}<span>Course</span></button>
+          <button class="toggle-btn sandbox-only" data-panel="cmd" title="Command bar">${ICONS.command}<span>Input</span></button>
+          <button class="toggle-btn book-only" data-act="contents" title="Table of contents">${ICONS.contents}<span>Contents</span></button>
+          <button class="icon-btn book-only" data-act="theme" title="Light / dark">${ICONS.theme}</button>
           <span class="sep"></span>
           <div class="menu-wrap">
             <button class="icon-btn" data-act="menu" title="Menu">${ICONS.menu}</button>
@@ -142,9 +156,11 @@ export class App implements ViewHost {
         <aside class="panel" data-pane="algebra"></aside>
         <div class="splitter" data-split="algebra"></div>
         <section class="graphics">
-          <div class="gview" data-view="2d"><span class="gview-tag">2D</span><button class="icon-btn sm gview-reset" title="Reset view">${ICONS.reset}</button></div>
-          <div class="gview" data-view="3d"><span class="gview-tag">3D</span><button class="icon-btn sm gview-reset" title="Reset view">${ICONS.reset}</button></div>
-          <div class="graphics-empty">Nothing to draw for this entry — see the Algebra and Course views.<br><button class="btn sm" data-act="show3d">Show the 3D view</button></div>
+          <div class="gviews">
+            <div class="gview" data-view="2d"><span class="gview-tag">2D</span><button class="icon-btn sm gview-reset" title="Reset view">${ICONS.reset}</button></div>
+            <div class="gview" data-view="3d"><span class="gview-tag">3D</span><button class="icon-btn sm gview-reset" title="Reset view">${ICONS.reset}</button></div>
+            <div class="graphics-empty">Nothing to draw for this entry — see the Algebra and Course views.<br><button class="btn sm" data-act="show3d">Show the 3D view</button></div>
+          </div>
         </section>
         <div class="splitter" data-split="course"></div>
         <aside class="panel" data-pane="course"></aside>
@@ -188,6 +204,13 @@ export class App implements ViewHost {
     this.course = new CoursePanel({
       scene: this.scene,
       openEntry: (id) => this.openEntry(id),
+      showFigure: (id) => {
+        this.loadEntryScene(id, 'replace', false);
+        if (this.layout.courseMax) {
+          this.layout.courseMax = false;
+          this.applyLayout();
+        }
+      },
       loadEntryScene: (id, mode) => this.loadEntryScene(id, mode),
       loadedEntry: () => this.loaded,
       select: (n) => this.select(n),
@@ -202,8 +225,21 @@ export class App implements ViewHost {
     });
     this.$('[data-pane=course]').append(this.course.el);
 
+    this.figure = new FigureCaption({
+      scene: this.scene,
+      setSlider: (n, v) => this.scene.setNumber(n, 'value', v),
+      commit: () => this.commit(),
+      toggleAnimation: (n) => this.toggleAnimation(n),
+      loadedEntry: () => this.loaded,
+      mode: () => this.layout.mode,
+      setMode: (m) => this.setMode(m),
+      openEntry: (id) => this.openEntry(id),
+    });
     const gfx = this.$('.graphics');
+    gfx.prepend(this.figure.head);
+    gfx.append(this.figure.controls, this.figure.foot);
     new ResizeObserver(() => this.updateStacked()).observe(gfx);
+    this.root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.addEventListener('click', () => this.setMode(b.dataset.mode as 'book' | 'sandbox')));
     this.view2d = new View2D(this.$('[data-view="2d"]'), this);
     this.view3d = new View3D(this.$('[data-view="3d"]'), this);
     this.$('[data-view="2d"] .gview-reset').addEventListener('click', () => this.view2d.resetView());
@@ -286,8 +322,26 @@ export class App implements ViewHost {
     this.applyLayout();
   }
 
+  setMode(m: 'book' | 'sandbox'): void {
+    if (this.layout.mode === m) return;
+    this.layout.mode = m;
+    if (m === 'sandbox') {
+      this.layout.course = true;
+      this.layout.courseMax = false;
+    }
+    this.applyLayout();
+    this.figure.update();
+    this.view3d.fitSoon();
+    this.view2d.fitSoon();
+  }
+
   private applyLayout(): void {
     const L = this.layout;
+    const book = L.mode === 'book';
+    this.root.classList.toggle('mode-book', book);
+    this.root.classList.toggle('mode-sandbox', !book);
+    this.root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === L.mode));
+    if (book) L.course = true;
     const show = (sel: string, on: boolean) => this.root.querySelectorAll<HTMLElement>(sel).forEach((e) => (e.style.display = on ? '' : 'none'));
     show('[data-pane=algebra], [data-split=algebra]', L.algebra);
     show('[data-pane=course], [data-split=course]', L.course);
@@ -302,7 +356,9 @@ export class App implements ViewHost {
     this.course?.updateMaxButton();
     this.$('[data-split=algebra]').style.display = L.algebra ? '' : 'none';
     this.$('[data-pane=algebra]').style.width = `${L.wAlgebra}px`;
-    this.$('[data-pane=course]').style.width = `${L.wCourse}px`;
+    this.$('[data-pane=course]').style.width = book ? '' : `${L.wCourse}px`;
+    if (!(L.figFrac > 0.15 && L.figFrac < 0.75)) L.figFrac = 0.4;
+    this.$('.graphics').style.width = book ? `${(L.figFrac * 100).toFixed(1)}%` : '';
     this.root.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach((b) => b.classList.toggle('on', !!L[b.dataset.panel as PanelId]));
     if (!L.v2d && this._activeDim === 2 && L.v3d) this._activeDim = 3;
     if (!L.v3d && this._activeDim === 3 && L.v2d) this._activeDim = 2;
@@ -317,7 +373,7 @@ export class App implements ViewHost {
 
   /** Stack the 2D view under the 3D view when both are shown in a tall, narrow area. */
   private updateStacked(): void {
-    const gfx = this.$('.graphics');
+    const gfx = this.$('.gviews');
     gfx.classList.toggle('stacked', this.layout.v2d && this.layout.v3d && gfx.clientWidth < gfx.clientHeight * 1.25);
   }
 
@@ -327,12 +383,21 @@ export class App implements ViewHost {
       e.preventDefault();
       s.setPointerCapture(e.pointerId);
       const x0 = e.clientX;
+      const book = this.layout.mode === 'book' && which === 'course';
       const key = which === 'algebra' ? 'wAlgebra' : 'wCourse';
       const w0 = this.layout[key];
+      const f0 = this.layout.figFrac;
+      const total = this.$('.workspace').clientWidth || window.innerWidth;
       const move = (ev: PointerEvent) => {
         const dx = ev.clientX - x0;
-        this.layout[key] = Math.max(180, Math.min(900, which === 'course' ? w0 - dx : w0 + dx));
-        this.$(`[data-pane=${which}]`).style.width = `${this.layout[key]}px`;
+        if (book) {
+          // the splitter sits between the text (left) and the figure (right)
+          this.layout.figFrac = Math.max(0.2, Math.min(0.7, f0 - dx / total));
+          this.$('.graphics').style.width = `${(this.layout.figFrac * 100).toFixed(1)}%`;
+        } else {
+          this.layout[key] = Math.max(180, Math.min(900, which === 'course' ? w0 - dx : w0 + dx));
+          this.$(`[data-pane=${which}]`).style.width = `${this.layout[key]}px`;
+        }
         this.view2d.resize();
         this.view3d.resize();
       };
@@ -466,17 +531,20 @@ export class App implements ViewHost {
       this.algebra.rebuild();
       this.algebra.setSelection(this._selected);
       this.course.refresh('all');
+      this.figure.update();
       for (const n of [...this.animating]) if (!this.scene.has(n)) this.animating.delete(n);
     } else if (e.type === 'values') {
       this.view3d.sync(e.names);
       this.view2d.sync();
       this.algebra.update(e.names);
       this.course.refresh(e.names);
+      this.figure.updateChecks();
     } else {
       const s = new Set([e.name]);
       this.view3d.sync(s);
       this.view2d.sync();
       this.algebra.update(s);
+      this.figure.updateChecks();
     }
   }
 
@@ -567,6 +635,11 @@ export class App implements ViewHost {
       const [c, n] = sec.split('.').map(Number);
       if (initial) this.loadEntryScene('2.3.2', 'replace', false);
       this.openSection(c, n);
+      return true;
+    }
+    if (h.has('contents')) {
+      if (initial) this.loadEntryScene('2.3.2', 'replace', false);
+      this.course.show({ kind: 'contents' });
       return true;
     }
     return false;
@@ -965,12 +1038,17 @@ export class App implements ViewHost {
     } else if (mod && e.key.toLowerCase() === 'y' && !typing) {
       e.preventDefault();
       this.redo();
-    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && this._selected) {
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && this._selected && this.layout.mode === 'sandbox') {
       e.preventDefault();
       this.remove(this._selected);
     } else if (e.key === 'Escape' && !typing) {
       this.setTool('move');
       this.select(null);
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !typing && !mod && this.layout.mode === 'book') {
+      // turn the pages of the book (unless the pointer is busy in a graphics view)
+      if ((e.target as HTMLElement).closest?.('.gview')) return;
+      e.preventDefault();
+      this.course.turnPage(e.key === 'ArrowLeft' ? -1 : 1);
     }
   }
 }

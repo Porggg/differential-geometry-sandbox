@@ -4,10 +4,13 @@ An interactive, GeoGebra-style sandbox for the objects of **B. O'Neill, _Element
 points and tangent vectors, vector fields, curves, the Frenet apparatus, 1-forms and differential forms, mappings,
 frames and frame fields, connection forms, isometries and congruence of curves.
 
-- **Course view** — the book: a table of contents of every numbered item of Chapters 1–3 (definitions, theorems, lemmas,
-  corollaries, examples, remarks) with its page, section pages, and entry pages with the statement, the proof (same structure
-  as the book), an explanation and live numerical checks. Clicking an entry loads its figure (3D and, when meaningful, 2D).
-  It also shows the full details of the selected object, including objects that cannot be drawn. ⤢ enlarges it for reading.
+- **Book mode** (default) — the course reads like the book: a title page and a table of contents with every numbered item
+  of Chapters 1–3 and its page, then section pages typeset like the book (chapter openings, run-in labels such as
+  "3.2 Theorem (Frenet formulas).", proofs with the book's structure, page numbers in the margin, cross-references by number).
+  Each item with a figure has a plate in the text; clicking it shows the figure beside the page, with its sliders and a
+  live check of the result. ← / → turn the pages. Links: `#entry=2.3.2`, `#section=2.3`, `#contents`.
+- **Sandbox mode** — the construction tools around the same figure: toolbar, Algebra view, command bar, 2D and 3D views.
+  The Course view also shows the full details of the selected object, including objects that cannot be drawn.
 - **Toolbar** — creates objects in the active graphics view (2D or 3D).
 - **Algebra view** — the construction, grouped by view: definitions, values, sliders (drag, type a value, ▶ animates), inline editing.
 - **Move tool** — drag free points, and drag α(t₀), velocities or Frenet frames along their curve.
@@ -41,7 +44,7 @@ The base path is set in `vite.config.ts` (`/differential-geometry-sandbox/`); ch
 | `src/objects/` | one file per toolbar group: the object types and their Course-view details |
 | `src/render/` | 3D view (three.js) and 2D view (canvas) |
 | `src/content/` | table of contents (`toc.ts`), entries (`ch1.ts`, `ch2.ts`, `ch3.ts`, `entries.ts`, `notions.ts`), check helpers |
-| `src/ui/` | panels: contents, algebra, course, toolbar, forms |
+| `src/ui/` | panels: the book (`course.ts`), figure caption (`figure.ts`), algebra, toolbar, forms |
 
 Content: `src/content/ch1.ts`, `ch2.ts`, `ch3.ts` (plus `entries.ts`, `notions.ts`) hold every entry of Chapters 1–3 —
 statement, proof (same structure as the book, our wording), explanation, figure (`scene`) and live `checks`.
