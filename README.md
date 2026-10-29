@@ -8,7 +8,10 @@ frames and frame fields, connection forms, isometries and congruence of curves.
   of Chapters 1–3 and its page, then section pages typeset like the book (chapter openings, run-in labels such as
   "3.2 Theorem (Frenet formulas).", proofs with the book's structure, page numbers in the margin, cross-references by number).
   Each item with a figure has a plate in the text; clicking it shows the figure beside the page, with its sliders and a
-  live check of the result. ← / → turn the pages. Links: `#entry=2.3.2`, `#section=2.3`, `#contents`.
+  live check of the result. ← / → turn the pages. Links: `#entry=2.3.2`, `#section=2.3`, `#ex=2.3.4`, `#contents`.
+- **Exercises** — every exercise of Sections 1.1–3.5, at the end of its section as in the book (same numbering and data),
+  each with a worked solution folded under it ("Show all solutions" opens them all). Solutions agree with the book's answers
+  to the odd-numbered exercises; where a printed answer is wrong, the solution says so.
 - **Sandbox mode** — the construction tools around the same figure: toolbar, Algebra view, command bar, 2D and 3D views.
   The Course view also shows the full details of the selected object, including objects that cannot be drawn.
 - **Toolbar** — creates objects in the active graphics view (2D or 3D).
@@ -43,10 +46,10 @@ The base path is set in `vite.config.ts` (`/differential-geometry-sandbox/`); ch
 | `src/core/` | object model, dependency graph (`scene.ts`), command parser |
 | `src/objects/` | one file per toolbar group: the object types and their Course-view details |
 | `src/render/` | 3D view (three.js) and 2D view (canvas) |
-| `src/content/` | table of contents (`toc.ts`), entries (`ch1.ts`, `ch2.ts`, `ch3.ts`, `entries.ts`, `notions.ts`), check helpers |
+| `src/content/` | table of contents (`toc.ts`), entries (`ch1.ts`, `ch2.ts`, `ch3.ts`, `entries.ts`, `notions.ts`), exercises (`ex1.ts`, `ex2.ts`, `ex3.ts`), check helpers |
 | `src/ui/` | panels: the book (`course.ts`), figure caption (`figure.ts`), algebra, toolbar, forms |
 
 Content: `src/content/ch1.ts`, `ch2.ts`, `ch3.ts` (plus `entries.ts`, `notions.ts`) hold every entry of Chapters 1–3 —
 statement, proof (same structure as the book, our wording), explanation, figure (`scene`) and live `checks`.
-`npm test` builds every figure and runs every check. Write TeX inside the `md` raw template and never write a dollar sign
+`npm test` builds every figure and runs every check, and renders every exercise (TeX and cross references `[[2.3.2]]`, `[[ex:2.3.4]]`). Write TeX inside the `md` raw template and never write a dollar sign
 directly followed by an opening brace (a test enforces it).

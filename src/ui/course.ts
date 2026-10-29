@@ -2,8 +2,8 @@
 // that read like a printed chapter (numbered results, proofs, commentary, figure plates) — plus the
 // full details of sandbox objects, including those that cannot be drawn.
 
-import { CHAPTERS, SECTIONS, entriesOfSection, entryLabel, getEntry, hasContent, localNumber } from '../content';
-import type { Entry, EntryKind, Section } from '../content/types';
+import { CHAPTERS, SECTIONS, entriesOfSection, entryLabel, exercisesOf, getEntry, hasContent, localNumber } from '../content';
+import type { Entry, EntryKind, ExerciseSet, Section } from '../content/types';
 import { getType } from '../core/registry';
 import type { Scene } from '../core/scene';
 import { ICONS } from './icons';
@@ -15,6 +15,8 @@ export type CoursePage =
   | { kind: 'help' }
   | { kind: 'section'; chapter: number; section: number }
   | { kind: 'entry'; id: string }
+  /** The exercises of a section ("1.3") or one exercise ("1.3.4"). */
+  | { kind: 'exercise'; id: string }
   | { kind: 'object'; name: string };
 
 export interface CourseHost {
@@ -40,6 +42,7 @@ const FILTERS: { label: string; kinds: EntryKind[] }[] = [
   { label: 'Definitions', kinds: ['Definition', 'Notion'] },
   { label: 'Examples', kinds: ['Example'] },
   { label: 'Remarks', kinds: ['Remark'] },
+  { label: 'Exercises', kinds: [] },
 ];
 
 const sectionOf = (ch: number, s: number): Section | undefined => SECTIONS.find((x) => x.chapter === ch && x.section === s);
@@ -72,6 +75,8 @@ export class CoursePanel {
   private active = new Set<string>(FILTERS.map((f) => f.label));
   private collapsed = new Set<number>();
   private tocScroll = 0;
+  /** Solutions shown for every exercise. */
+  private allSolutions = false;
 
   constructor(private host: CourseHost) {
     this.el = document.createElement('div');
@@ -133,7 +138,20 @@ export class CoursePanel {
       const e = getEntry(p.id);
       return e ? sectionOf(e.chapter, e.section) : undefined;
     }
+    if (p.kind === 'exercise') {
+      const [c, n] = p.id.split('.').map(Number);
+      return sectionOf(c, n);
+    }
     return undefined;
+  }
+
+  /** Show the exercises of a section ("1.3") or one exercise ("1.3.4", with its solution open). */
+  openExercise(id: string): void {
+    this.show({ kind: 'exercise', id });
+    if (id.split('.').length === 3) {
+      const d = this.body.querySelector(`[data-anchor="ex-${CSS.escape(id)}"] .ex-sol`) as HTMLDetailsElement | null;
+      if (d) d.open = true;
+    }
   }
 
   /** Previous / next section, like turning pages. From the contents, "next" opens §1.1. */
@@ -159,7 +177,7 @@ export class CoursePanel {
         this.render();
         this.body.scrollTop = top;
       }
-    } else if (page.kind === 'entry' || page.kind === 'section') {
+    } else if (page.kind === 'entry' || page.kind === 'section' || page.kind === 'exercise') {
       this.updateFigureMarkers();
     }
   }
@@ -196,7 +214,8 @@ export class CoursePanel {
         if (navigated) this.body.scrollTop = 0;
         break;
       case 'section':
-      case 'entry': {
+      case 'entry':
+      case 'exercise': {
         if (!sec) {
           this.body.innerHTML = '<p class="pad">Unknown page.</p>';
           break;
@@ -207,6 +226,7 @@ export class CoursePanel {
           if (page.kind === 'section' && navigated) this.body.scrollTop = 0;
         } else this.updateFigureMarkers();
         if (page.kind === 'entry' && navigated) this.scrollToEntry(page.id);
+        if (page.kind === 'exercise' && navigated) this.scrollToEntry(`ex-${page.id}`);
         break;
       }
     }
@@ -271,7 +291,12 @@ export class CoursePanel {
           if (q && !`${e.id} ${e.kind} ${e.title} ${e.bookName ?? ''} ${s.title}`.toLowerCase().includes(q)) return false;
           return true;
         });
-        if (!items.length && q) continue;
+        const ex = exercisesOf(s.chapter, s.section);
+        const exLine =
+          ex && this.active.has('Exercises') && (!q || `exercises ${s.title}`.toLowerCase().includes(q))
+            ? `<a href="#" class="toc-line item ex" data-ex="${s.chapter}.${s.section}"><span class="n"></span><span class="t"><span class="k">Exercises</span> 1–${ex.items.length}</span><span class="dots"></span><span class="pg">${ex.page}</span></a>`
+            : '';
+        if (!items.length && !exLine && q) continue;
         secs.push(`
           <div class="toc-sec">
             <a href="#" class="toc-line sec" data-section="${s.chapter}.${s.section}"><span class="n">${s.chapter}.${s.section}</span><span class="t">${escapeHtml(s.title)}</span><span class="dots"></span><span class="pg">${s.page}</span></a>
@@ -280,7 +305,7 @@ export class CoursePanel {
                 (e) => `<a href="#" class="toc-line item ${e.id === loaded ? 'current' : ''}" data-entry="${e.id}">
                   <span class="n">${localNumber(e)}</span><span class="t"><span class="k">${e.kind === 'Notion' ? '' : e.kind}</span> ${escapeHtml(e.title)}</span><span class="dots"></span><span class="pg">${e.page}</span></a>`,
               )
-              .join('')}</div>
+              .join('')}${exLine}</div>
           </div>`);
       }
       if (!secs.length) continue;
@@ -320,7 +345,7 @@ export class CoursePanel {
 
   private sectionHtml(s: Section): string {
     const ch = chapterOf(s.chapter);
-    const md = (src: string) => renderMarkdown(src, { chapter: s.chapter });
+    const md = (src: string) => renderMarkdown(src, { chapter: s.chapter, section: s.section });
     const opener =
       s.section === 1
         ? `<header class="ch-open">
@@ -347,6 +372,7 @@ export class CoursePanel {
         ${opener}
         <h2 class="sec-title"><span class="sec-num">${s.chapter}.${s.section}</span>${escapeHtml(s.title)}</h2>
         ${entries}
+        ${this.exercisesHtml(exercisesOf(s.chapter, s.section), md)}
         <footer class="page-foot">
           <div class="folio">pp. ${s.page}–${lastPage(s)} in the book</div>
           <nav class="turns">${turn(prev, 'prev')}${turn(next, 'next')}</nav>
@@ -389,6 +415,32 @@ export class CoursePanel {
         ${fig}
         ${e.notes ? `<div class="bk-notes">${md(e.notes)}</div>` : ''}
         ${tryThis}
+      </section>`;
+  }
+
+  /** The exercises at the end of the section, as in the book; each solution is folded under its exercise. */
+  private exercisesHtml(x: ExerciseSet | undefined, md: (s: string) => string): string {
+    if (!x) return '';
+    const key = `${x.chapter}.${x.section}`;
+    const items = x.items.map(
+      (e) => `
+        <li class="ex" data-anchor="ex-${key}.${e.n}">
+          <div class="ex-stmt">${runIn(md(e.statement), `<span class="ex-n">${e.n}.</span>`)}</div>
+          <details class="ex-sol"${this.allSolutions ? ' open' : ''}>
+            <summary>Solution</summary>
+            <div class="ex-sol-body">${md(e.solution)}</div>
+          </details>
+        </li>`,
+    );
+    return `
+      <section class="bk-exercises" data-anchor="ex-${key}">
+        <a href="#" class="bk-pg" title="Page in O'Neill (revised 2nd ed.)">p. ${x.page}</a>
+        <div class="ex-head">
+          <h3>Exercises</h3>
+          <label class="ex-all"><input type="checkbox" data-all-solutions ${this.allSolutions ? 'checked' : ''}> Show all solutions</label>
+        </div>
+        ${x.intro ? `<div class="ex-intro">${md(x.intro)}</div>` : ''}
+        <ol class="ex-list">${items.join('')}</ol>
       </section>`;
   }
 
@@ -481,9 +533,18 @@ export class CoursePanel {
       this.host.showFigure(fig.dataset.fig);
       return;
     }
+    const all = (e.target as HTMLElement).closest('[data-all-solutions]') as HTMLInputElement | null;
+    if (all) {
+      this.allSolutions = all.checked;
+      this.body.querySelectorAll<HTMLDetailsElement>('.ex-sol').forEach((d) => (d.open = all.checked));
+      return;
+    }
     const a = (e.target as HTMLElement).closest('a, button') as HTMLElement | null;
     if (!a) return;
-    if (a.dataset.entry) {
+    if (a.dataset.ex) {
+      e.preventDefault();
+      this.openExercise(a.dataset.ex);
+    } else if (a.dataset.entry) {
       e.preventDefault();
       this.host.openEntry(a.dataset.entry);
     } else if (a.dataset.entryPage) {

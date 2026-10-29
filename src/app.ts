@@ -62,6 +62,8 @@ export class App implements ViewHost {
   private _selected: string | null = null;
   private _activeDim: 2 | 3 = 3;
   private loaded: string | null = null;
+  /** False until the URL hash has been read at startup. */
+  private booted = false;
   private layout: Layout;
   private undoStack: string[] = [];
   private undoPos = -1;
@@ -103,6 +105,8 @@ export class App implements ViewHost {
     this.scene.on((e) => this.onScene(e));
     this.applyLayout();
     this.boot();
+    this.booted = true;
+    this.pageChanged(this.course.page);
     document.addEventListener('keydown', (e) => this.onKey(e));
     window.addEventListener('hashchange', () => this.onHash());
     requestAnimationFrame((t) => this.animate(t));
@@ -637,6 +641,16 @@ export class App implements ViewHost {
       this.openSection(c, n);
       return true;
     }
+    const ex = h.get('ex');
+    if (ex && /^\d+\.\d+(\.\d+)?$/.test(ex)) {
+      if (initial) this.loadEntryScene('2.3.2', 'replace', false);
+      if (!this.layout.course) {
+        this.layout.course = true;
+        this.applyLayout();
+      }
+      this.course.openExercise(ex);
+      return true;
+    }
     if (h.has('contents')) {
       if (initial) this.loadEntryScene('2.3.2', 'replace', false);
       this.course.show({ kind: 'contents' });
@@ -647,9 +661,12 @@ export class App implements ViewHost {
 
   /** Keep the URL in sync with the book page (shareable links to entries and sections). */
   private pageChanged(page: CoursePage): void {
+    // the course panel reports its first page while it is built: keep the URL until it has been read
+    if (!this.booted) return;
     let hash = '';
     if (page.kind === 'entry') hash = `#entry=${page.id}`;
     else if (page.kind === 'section') hash = `#section=${page.chapter}.${page.section}`;
+    else if (page.kind === 'exercise') hash = `#ex=${page.id}`;
     else if (page.kind !== 'contents') return;
     if (location.hash !== hash) history.replaceState(null, '', hash || location.pathname + location.search);
   }

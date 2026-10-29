@@ -64,3 +64,23 @@ export interface Builder {
   slider(name: string, value: number, min: number, max: number, step?: number, style?: Partial<Style>): void;
   add(type: string, name: string, params: Record<string, ParamValue>, style?: Partial<Style>): void;
 }
+
+export interface Exercise {
+  /** Number in the section's exercise set, as in the book. */
+  n: number;
+  /** Statement (Markdown; "(a) …" lines become a list of parts). */
+  statement: string;
+  /** Worked solution (our own; agrees with the book's answer for odd-numbered exercises). */
+  solution: string;
+}
+
+/** The exercises printed at the end of a section. */
+export interface ExerciseSet {
+  chapter: number;
+  section: number;
+  /** Page where the exercises start in the book. */
+  page: number;
+  /** Text printed before the first exercise (e.g. data shared by several exercises). */
+  intro?: string;
+  items: Exercise[];
+}

@@ -1,10 +1,13 @@
 import { CH1 } from './ch1';
 import { CH2 } from './ch2';
 import { CH3 } from './ch3';
+import { EX1 } from './ex1';
+import { EX2 } from './ex2';
+import { EX3 } from './ex3';
 import { ENTRIES } from './entries';
 import { NOTIONS } from './notions';
 import { CHAPTERS, SECTIONS, baseEntries } from './toc';
-import type { Entry } from './types';
+import type { Entry, ExerciseSet } from './types';
 
 const byId = new Map<string, Entry>();
 for (const e of baseEntries()) byId.set(e.id, e);
@@ -44,4 +47,16 @@ export function entriesOfSection(chapter: number, section: number): Entry[] {
   return allEntries()
     .filter((e) => e.chapter === chapter && e.section === section)
     .sort((a, b) => order(a) - order(b));
+}
+
+const EXERCISES: ExerciseSet[] = [...EX1, ...EX2, ...EX3];
+
+export const allExerciseSets = (): ExerciseSet[] => EXERCISES;
+export const exercisesOf = (chapter: number, section: number): ExerciseSet | undefined =>
+  EXERCISES.find((x) => x.chapter === chapter && x.section === section);
+
+/** "Exercise 4" inside Section 1.3, "Exercise 4 of Section 1.3" elsewhere (as the book refers to them). */
+export function exerciseLabel(id: string, chapter?: number, section?: number): string {
+  const [c, s, n] = id.split('.').map(Number);
+  return `Exercise ${n}` + (c === chapter && s === section ? '' : ` of Section ${c}.${s}`);
 }
