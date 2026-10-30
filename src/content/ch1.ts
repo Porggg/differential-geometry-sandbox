@@ -278,7 +278,15 @@ The sandbox computes every directional derivative with this formula (symbolic pa
 1. $(a\mathbf{v}_\mathbf{p} + b\mathbf{w}_\mathbf{p})[f] = a\,\mathbf{v}_\mathbf{p}[f] + b\,\mathbf{w}_\mathbf{p}[f]$.
 2. $\mathbf{v}_\mathbf{p}[af + bg] = a\,\mathbf{v}_\mathbf{p}[f] + b\,\mathbf{v}_\mathbf{p}[g]$.
 3. $\mathbf{v}_\mathbf{p}[fg] = \mathbf{v}_\mathbf{p}[f] \cdot g(\mathbf{p}) + f(\mathbf{p}) \cdot \mathbf{v}_\mathbf{p}[g]$.`.replace(/^(\d)\. /gm, '- ($1) '),
-    proof: md`All three follow easily from Lemma [[1.3.2]]. We prove (3). By the lemma, if $\mathbf{v} = (v_1, v_2, v_3)$,
+    proof: md`All three follow easily from Lemma [[1.3.2]]. (The book writes out only (3); (1) and (2) are proved in the same way.) Throughout, $\mathbf{v} = (v_1, v_2, v_3)$ and $\mathbf{w} = (w_1, w_2, w_3)$.
+
+**(1)** By definition of the operations of the tangent space $T_\mathbf{p}(\mathbf{R}^3)$, $a\mathbf{v}_\mathbf{p} + b\mathbf{w}_\mathbf{p} = (a\mathbf{v} + b\mathbf{w})_\mathbf{p}$, and the vector $a\mathbf{v} + b\mathbf{w}$ has coordinates $av_i + bw_i$. Hence by the lemma
+$$\begin{aligned} (a\mathbf{v}_\mathbf{p} + b\mathbf{w}_\mathbf{p})[f] &= \sum (av_i + bw_i) \frac{\partial f}{\partial x_i}(\mathbf{p}) \\ &= a\sum v_i \frac{\partial f}{\partial x_i}(\mathbf{p}) + b\sum w_i \frac{\partial f}{\partial x_i}(\mathbf{p}) \\ &= a\,\mathbf{v}_\mathbf{p}[f] + b\,\mathbf{w}_\mathbf{p}[f]. \end{aligned}$$
+
+**(2)** Partial differentiation is linear: $\dfrac{\partial(af + bg)}{\partial x_i} = a\,\dfrac{\partial f}{\partial x_i} + b\,\dfrac{\partial g}{\partial x_i}$. Hence by the lemma
+$$\begin{aligned} \mathbf{v}_\mathbf{p}[af + bg] &= \sum v_i \left(a\,\frac{\partial f}{\partial x_i}(\mathbf{p}) + b\,\frac{\partial g}{\partial x_i}(\mathbf{p})\right) \\ &= a\sum v_i \frac{\partial f}{\partial x_i}(\mathbf{p}) + b\sum v_i \frac{\partial g}{\partial x_i}(\mathbf{p}) \\ &= a\,\mathbf{v}_\mathbf{p}[f] + b\,\mathbf{v}_\mathbf{p}[g]. \end{aligned}$$
+
+**(3)** By the lemma,
 $$\mathbf{v}_\mathbf{p}[fg] = \sum v_i \frac{\partial (fg)}{\partial x_i}(\mathbf{p}).$$
 But $\dfrac{\partial(fg)}{\partial x_i} = \dfrac{\partial f}{\partial x_i}\cdot g + f \cdot \dfrac{\partial g}{\partial x_i}$. Hence
 $$\begin{aligned} \mathbf{v}_\mathbf{p}[fg] &= \sum v_i \left(\frac{\partial f}{\partial x_i}(\mathbf{p}) \cdot g(\mathbf{p}) + f(\mathbf{p}) \cdot \frac{\partial g}{\partial x_i}(\mathbf{p})\right) \\ &= \left(\sum v_i \frac{\partial f}{\partial x_i}(\mathbf{p})\right) g(\mathbf{p}) + f(\mathbf{p}) \left(\sum v_i \frac{\partial g}{\partial x_i}(\mathbf{p})\right) \\ &= \mathbf{v}_\mathbf{p}[f] \cdot g(\mathbf{p}) + f(\mathbf{p}) \cdot \mathbf{v}_\mathbf{p}[g]. \qquad ∎ \end{aligned}$$`,
